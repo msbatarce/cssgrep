@@ -10,6 +10,7 @@
   "files": [
     "index.js",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE",
     "man/cssgrep.1",
     "completions/"
