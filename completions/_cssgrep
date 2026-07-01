@@ -7,7 +7,9 @@ _cssgrep() {
   _arguments -s -S \
     '(-r --recursive)'{-r,--recursive}'[recurse into directory arguments]' \
     '--ext[extensions to scan with -r]:extensions (comma-separated):' \
+    '*--include[only search files matching glob (replaces --ext)]:glob:' \
     '*'{-i,--ignore}'[skip files/dirs matching glob while recursing]:glob:' \
+    '*--exclude[alias for --ignore]:glob:' \
     '--ignore-file[read ignore globs from a file]:file:_files' \
     '(-n --line-number)'{-n,--line-number}'[prefix each match with line:col]' \
     '(-p --print)'{-p,--print}'[pretty-print the matched node HTML]' \

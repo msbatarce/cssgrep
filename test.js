@@ -651,6 +651,31 @@ check('binary files are skipped (no match) with a note, suppressed by -s', () =>
   assert.strictEqual(s.stderr, '', s.stderr);
 });
 
+// --- --include / --exclude ---------------------------------------------------
+check('--include with a single glob restricts to matching files', () => {
+  // page.htm is the only file matching *.htm exactly (not *.html)
+  const out = execFileSync('node', [CLI, 'p', '-r', '--include', '*.htm'], { cwd: tmp, encoding: 'utf8' });
+  assert.ok(/htm/.test(out), out);
+  assert.ok(!/multi\.html|nested\.html/.test(out), out);
+});
+
+check('--include brace alternation matches both extensions', () => {
+  const out = execFileSync('node', [CLI, 'p', '-r', '--include', '*.{html,htm}'], { cwd: tmp, encoding: 'utf8' });
+  assert.ok(/page\.htm:/.test(out), `expected .htm hit\n${out}`);
+  assert.ok(/multi\.html:|nested\.html:/.test(out), `expected .html hit\n${out}`);
+});
+
+check('--ext with --include: exit status 2', () => {
+  const { status } = run(['p', '-r', '--ext', 'html', '--include', '*.htm'], { expectStatus: 2 });
+  assert.strictEqual(status, 2);
+});
+
+check('--exclude is an alias of --ignore', () => {
+  const a = execFileSync('node', [CLI, 'p.t', '-r', '--ignore', 'node_modules'], { cwd: igRoot, encoding: 'utf8' });
+  const b = execFileSync('node', [CLI, 'p.t', '-r', '--exclude', 'node_modules'], { cwd: igRoot, encoding: 'utf8' });
+  assert.strictEqual(b, a);
+});
+
 // --- option parsing ergonomics ----------------------------------------------
 check('-w100 attached short value equals -w 100', () => {
   const a = run(['span.hit', '-w', '12'], { input: minified }).stdout;

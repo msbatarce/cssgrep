@@ -60,10 +60,21 @@ Comma-separated extensions to scan with
 (default:
 .IR html,htm ).
 .TP
+.BI \-\-include " glob"
+Only search files whose name/path matches
+.I glob
+while recursing (repeatable). Replaces
+.BR \-\-ext ;
+the two cannot be combined.
+.TP
 .BR \-i ", " \-\-ignore " \fIglob\fR"
 Skip files/dirs matching
 .I glob
 while recursing (repeatable).
+.TP
+.BI \-\-exclude " glob"
+Alias for
+.BR \-\-ignore .
 .TP
 .BI \-\-ignore\-file " path"
 Read ignore globs from
@@ -184,6 +195,12 @@ Long options take a value with
 .B =
 or as the next word
 .RB ( \-\-max\-width=100 ", " "\-\-ext htm" ).
+.PP
+Globs for
+.BR \-\-include ", " \-\-ignore ", and " \-\-exclude
+support
+.BR * " (within a path segment), " ** " (across " / ),
+.BR ? " (one non-slash char), and brace alternation like " *.{html,htm} .
 .SH EXIT STATUS
 .TP
 .B 0

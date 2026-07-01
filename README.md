@@ -74,7 +74,9 @@ locator appears only with `-n`:
 |------|-------------|
 | `-r`, `--recursive` | Recurse into directory arguments (defaults to `.` if none given). |
 | `--ext <list>` | Extensions to scan with `-r` (default `html,htm`). Value attaches with `=`: `--ext htm` or `--ext=htm`. |
+| `--include <glob>` | Only search files whose name/path matches `<glob>` while recursing (repeatable). Replaces `--ext` — the two can't be combined. e.g. `--include '*.{html,htm,xhtml}'`. |
 | `-i`, `--ignore <glob>` | Skip files/dirs matching `<glob>` while recursing (repeatable). `node_modules`, `*.min.html`, `build/` (dir-only), or path globs like `src/vendor/**`. |
+| `--exclude <glob>` | Alias for `--ignore` (grep's name for the same thing). |
 | `--ignore-file <path>` | Load ignore globs from a file, one per line (`#` comments and blank lines ignored) — like a `.gitignore`. |
 | `-n`, `--line-number` | Prefix each match with its `line:col` locator. Mutually exclusive with `-c` and `-p`. |
 | `-p`, `--print` | Pretty-print the matched node's HTML, re-indented from scratch (works on minified input). No `line:col` locator is shown. |
@@ -102,6 +104,11 @@ locator appears only with `-n`:
 
 Boolean short flags can be combined into one token (`-rn` is `-r -n`), and a
 value-taking flag may close such a cluster (`-rnw100`).
+
+Globs for `--include`/`--ignore`/`--exclude` support `*` (within a path
+segment), `**` (across `/`), `?` (one non-slash char), and brace alternation
+like `*.{html,htm}`. A trailing `/` matches directories only; a pattern with a
+`/` matches against the path, otherwise the basename — gitignore-flavored.
 
 Binary files are detected (a NUL byte or a high ratio of control bytes in the
 first 8 KB) and skipped with a note on stderr — parsing them as HTML is never

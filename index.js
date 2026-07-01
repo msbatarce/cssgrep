@@ -30,7 +30,9 @@ Output (one line per match):
 Options:
   -r, --recursive        Recurse into directory arguments.
       --ext <list>       Comma-separated extensions for -r (default: html,htm).
+      --include <glob>   Only search files matching <glob> (replaces --ext; repeatable).
   -i, --ignore <glob>    Skip files/dirs matching <glob> when recursing (repeatable).
+      --exclude <glob>   Alias for --ignore.
       --ignore-file <path>   Read ignore globs from <path> (one per line, # comments).
   -n, --line-number      Prefix each match with its line:col (excludes -c, -p).
   -p, --print            Pretty-print the matched node's HTML above its location.
@@ -60,6 +62,9 @@ Short flags combine (-rn) and a value attaches to its flag (-w100) or follows it
 (-w 100); a value-taking flag may close a cluster (-rnw100). Long options take a
 value with = or as the next word (--max-width=100, --ext htm).
 
+Globs (--include/--ignore/--exclude) support *, ** (crosses /), ?, and brace
+alternation like *.{html,htm}.
+
 Exit status: 0 if any match was found, 1 if none, 2 on error.`;
 
 function fail(msg) {
@@ -87,6 +92,7 @@ function parseArgs(argv) {
     paths: [],
     recursive: false,
     exts: ['html', 'htm'],
+    extGiven: false,
     lineNumber: false,
     print: false,
     maxWidth: 0,
@@ -104,12 +110,14 @@ function parseArgs(argv) {
     before: 0,
     after: 0,
     ignore: [],
+    include: [],
     withFilename: false,
     noFilename: false,
     noMessages: false,
     color: 'auto',
   };
   const setExts = v => {
+    opts.extGiven = true;
     opts.exts = (v || '').split(',').map(s => s.trim().replace(/^\./, '')).filter(Boolean);
   };
   const boundedInt = (v, what, min) => {
@@ -126,6 +134,7 @@ function parseArgs(argv) {
   const setBefore = v => { opts.before = boundedInt(v, '--before-context', 0); };
   const setContext = v => { opts.after = opts.before = boundedInt(v, '--context', 0); };
   const addIgnore = v => { const c = compileIgnore(v); if (c) opts.ignore.push(c); };
+  const addInclude = v => { const c = compileIgnore(v); if (c) opts.include.push(c); };
   const addIgnoreFile = v => {
     let content;
     try { content = fs.readFileSync(v, 'utf8'); }
@@ -162,8 +171,9 @@ function parseArgs(argv) {
         case '--no-filename': opts.noFilename = true; break;
         case '--no-messages': opts.noMessages = true; break;
         case '--ext': setExts(value()); break;
-        case '--ignore': addIgnore(value()); break;
+        case '--ignore': case '--exclude': addIgnore(value()); break;
         case '--ignore-file': addIgnoreFile(value()); break;
+        case '--include': addInclude(value()); break;
         case '--max-width': setMaxWidth(value()); break;
         case '--max-count': setMaxCount(value()); break;
         case '--max-total': setMaxTotal(value()); break;
@@ -219,6 +229,8 @@ function parseArgs(argv) {
   if (aggregates > 1) fail('only one of -c, -l, -L, -q may be given');
   // Filename prefix can be forced on or off, but not both (grep -H / -h).
   if (opts.withFilename && opts.noFilename) fail('-H cannot be combined with --no-filename');
+  // --include fully replaces the extension filter, so the two can't coexist.
+  if (opts.extGiven && opts.include.length) fail('--ext and --include cannot be combined');
   // Per-match print modes choose what is printed for each match; only one.
   const printModes = [opts.print, opts.attr != null, opts.text, opts.json].filter(Boolean).length;
   if (printModes > 1) fail('only one of -p, --attr, --text, --json may be given');
@@ -607,9 +619,11 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
 }
 
 // Translate a glob to a regex body. `*` matches within a path segment, `**`
-// across segments, `?` a single non-slash char; everything else is literal.
+// across segments, `?` a single non-slash char, `{a,b,c}` alternation; every
+// other char is literal.
 function globToRegex(glob) {
   let re = '';
+  let depth = 0;                            // open `{` alternation groups
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i];
     if (c === '*') {
@@ -622,12 +636,21 @@ function globToRegex(glob) {
       }
     } else if (c === '?') {
       re += '[^/]';
-    } else if (/[.+^${}()|[\]\\]/.test(c)) {
+    } else if (c === '{') {
+      re += '(';
+      depth++;
+    } else if (c === '}' && depth > 0) {
+      re += ')';
+      depth--;
+    } else if (c === ',' && depth > 0) {
+      re += '|';
+    } else if (/[.+^$()|[\]\\]/.test(c)) {  // note: { } handled above
       re += '\\' + c;
     } else {
       re += c;
     }
   }
+  while (depth-- > 0) re += ')';            // close any unbalanced `{`
   return re;
 }
 
@@ -644,7 +667,9 @@ function compileIgnore(pattern) {
   return { re, dirOnly, hasSlash };
 }
 
-function isIgnored(name, full, isDir, matchers) {
+// True if name/path matches any compiled glob matcher (shared by --ignore/
+// --exclude and --include).
+function matchesAny(name, full, isDir, matchers) {
   for (const m of matchers) {
     if (m.dirOnly && !isDir) continue;
     if (m.re.test(m.hasSlash ? full : name)) return true;
@@ -663,12 +688,17 @@ function* walk(dir, opts) {
   for (const e of entries) {
     const full = path.join(dir, e.name);
     const isDir = e.isDirectory();
-    if (opts.ignore.length && isIgnored(e.name, full, isDir, opts.ignore)) continue;
+    if (opts.ignore.length && matchesAny(e.name, full, isDir, opts.ignore)) continue;
     if (isDir) {
       yield* walk(full, opts);
     } else if (e.isFile()) {
-      const ext = path.extname(e.name).slice(1).toLowerCase();
-      if (opts.exts.includes(ext)) yield full;
+      // --include replaces the extension filter; otherwise filter by --ext.
+      if (opts.include.length) {
+        if (matchesAny(e.name, full, false, opts.include)) yield full;
+      } else {
+        const ext = path.extname(e.name).slice(1).toLowerCase();
+        if (opts.exts.includes(ext)) yield full;
+      }
     }
   }
 }
