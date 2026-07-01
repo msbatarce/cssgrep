@@ -1,0 +1,20 @@
+{
+  "name": "vim-css-selector",
+  "version": "1.0.0",
+  "description": "Search HTML by CSS selector and report matches with file:line:col, grep-style.",
+  "main": "index.js",
+  "bin": {
+    "cssgrep": "index.js"
+  },
+  "scripts": {
+    "test": "node test.js"
+  },
+  "keywords": ["css", "selector", "html", "grep", "vim", "cli"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "css-select": "^7.0.0",
+    "dom-serializer": "^3.1.1",
+    "htmlparser2": "^12.0.0"
+  }
+}
