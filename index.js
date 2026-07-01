@@ -29,6 +29,9 @@ Options:
   -w, --max-width <n>    Truncate the shown line to <n> columns (ellipsis added).
   -m, --max-count <n>    Stop after <n> matches per file.
   -c, --count            Print only a count of matches (per file when relevant).
+  -l, --files-with-matches   Print only the names of files that have a match.
+  -L, --files-without-match  Print only the names of files with no match.
+  -q, --quiet            Print nothing; exit 0 on first match, 1 if none.
       --color[=<when>]   Colorize output: auto (default), always or never.
   -h, --help             Show this help.
 
@@ -68,6 +71,9 @@ function parseArgs(argv) {
     maxWidth: 0,
     maxCount: 0,
     count: false,
+    filesWithMatches: false,
+    filesWithoutMatch: false,
+    quiet: false,
     color: 'auto',
   };
   const setExts = v => {
@@ -98,6 +104,9 @@ function parseArgs(argv) {
         case '--line-number': opts.lineNumber = true; break;
         case '--print': opts.print = true; break;
         case '--count': opts.count = true; break;
+        case '--files-with-matches': opts.filesWithMatches = true; break;
+        case '--files-without-match': opts.filesWithoutMatch = true; break;
+        case '--quiet': case '--silent': opts.quiet = true; break;
         case '--ext': setExts(value()); break;
         case '--max-width': setMaxWidth(value()); break;
         case '--max-count': setMaxCount(value()); break;
@@ -124,6 +133,9 @@ function parseArgs(argv) {
           case 'n': opts.lineNumber = true; break;
           case 'p': opts.print = true; break;
           case 'c': opts.count = true; break;
+          case 'l': opts.filesWithMatches = true; break;
+          case 'L': opts.filesWithoutMatch = true; break;
+          case 'q': opts.quiet = true; break;
           default: fail(`unknown option: -${ch}`);
         }
       }
@@ -133,6 +145,10 @@ function parseArgs(argv) {
     opts.positionals.push(a);
   }
   if (opts.positionals.length === 0) fail('no selector given (try --help)');
+  // Aggregate modes each suppress per-match output, so at most one may apply.
+  const aggregates = [opts.count, opts.filesWithMatches, opts.filesWithoutMatch, opts.quiet]
+    .filter(Boolean).length;
+  if (aggregates > 1) fail('only one of -c, -l, -L, -q may be given');
   if (opts.lineNumber && opts.count) fail('-n cannot be combined with -c');
   if (opts.lineNumber && opts.print) fail('-n cannot be combined with -p');
   if (!['auto', 'always', 'never'].includes(opts.color)) {
@@ -239,12 +255,22 @@ function prettyPrint(el) {
   });
 }
 
-function searchSource(src, label, opts, out) {
+// `name` is the source's display name (file path, or "(standard input)"); it is
+// used by the aggregate modes (-l/-L/-c). `showLabel` decides whether per-match
+// lines carry a `file:` prefix (only when more than one file is searched).
+function searchSource(src, name, showLabel, opts, out) {
   const dom = parseDocument(src, {
     withStartIndices: true,
     withEndIndices: true,
   });
   const matches = selectAll(opts.selector, dom);
+  const found = matches.length;
+  // Aggregate modes suppress per-match output entirely.
+  if (opts.quiet) return found;                                  // status only
+  if (opts.filesWithMatches) { if (found) out.push(name); return found; }
+  if (opts.filesWithoutMatch) { if (!found) out.push(name); return found; }
+
+  const label = showLabel ? name : null;
   // -m/--max-count caps how many matches per source are reported (and counted).
   const limited = opts.maxCount ? matches.slice(0, opts.maxCount) : matches;
   if (opts.count) {
@@ -332,7 +358,7 @@ function main() {
 
   try {
     if (useStdin) {
-      total += searchSource(readStdin(), null, opts, out);
+      total += searchSource(readStdin(), '(standard input)', false, opts, out);
     } else {
       for (const f of files) {
         let src;
@@ -342,7 +368,8 @@ function main() {
           process.stderr.write(`cssgrep: ${f}: ${e.code || e.message}\n`);
           continue;
         }
-        total += searchSource(src, showLabel ? f : null, opts, out);
+        total += searchSource(src, f, showLabel, opts, out);
+        if (opts.quiet && total > 0) break;   // -q: first match decides the status
       }
     }
   } catch (e) {
@@ -353,7 +380,10 @@ function main() {
   }
 
   if (out.length) process.stdout.write(out.join('\n') + '\n');
-  process.exit(total > 0 ? 0 : 1);
+  // Normally success means "a match was found". With -L it means "a file
+  // without a match was printed", which is decoupled from the match total.
+  const success = opts.filesWithoutMatch ? out.length > 0 : total > 0;
+  process.exit(success ? 0 : 1);
 }
 
 main();

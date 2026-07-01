@@ -46,6 +46,9 @@ locator appears only with `-n`:
 | `-w`, `--max-width <n>` | Truncate the shown line to `n` columns (adds `…`). Value attaches or follows: `-w100`, `-w 100`, `--max-width=100`. |
 | `-m`, `--max-count <n>` | Stop after `n` matches per file (caps `-c` too). |
 | `-c`, `--count` | Print only the match count (per file when relevant). |
+| `-l`, `--files-with-matches` | Print only the names of files that contain a match. |
+| `-L`, `--files-without-match` | Print only the names of files with no match. |
+| `-q`, `--quiet` | Print nothing; exit `0` on the first match, `1` if none. Stops early. |
 | `--color[=<when>]` | Colorize output: `auto` (default — color only when stdout is a terminal), `always`, or `never`. A bare `--color` means `always`. |
 | `-h`, `--help` | Show help. |
 

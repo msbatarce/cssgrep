@@ -182,6 +182,65 @@ check('invalid --max-count value: exit status 2', () => {
   assert.strictEqual(status, 2);
 });
 
+check('-l lists only files that match', () => {
+  const { stdout } = run(['div.a', '-l', '-r', tmp]);
+  const lines = stdout.trimEnd().split('\n');
+  assert.ok(lines.includes(fMulti) && lines.includes(fNested), stdout);
+  assert.ok(!lines.some(l => /min\.html|crlf\.html|page\.htm/.test(l)), stdout);
+});
+
+check('-l prints the file name even for a single file', () => {
+  const { stdout, status } = run(['p#x', '-l', fMulti]);
+  assert.strictEqual(stdout.trimEnd(), fMulti);
+  assert.strictEqual(status, 0);
+});
+
+check('-l from stdin names (standard input)', () => {
+  const { stdout } = run(['div.a', '-l'], { input: multiline });
+  assert.strictEqual(stdout.trimEnd(), '(standard input)');
+});
+
+check('-L lists only files without a match', () => {
+  const { stdout } = run(['div.a', '-L', '-r', tmp]);
+  const lines = stdout.trimEnd().split('\n');
+  assert.ok(!lines.includes(fMulti) && !lines.includes(fNested), stdout);
+  assert.ok(lines.includes(fMin), stdout);
+});
+
+check('-L exit 0 when a non-matching file is printed', () => {
+  const { stdout, status } = run(['div.a', '-L', fMin]);
+  assert.strictEqual(stdout.trimEnd(), fMin);
+  assert.strictEqual(status, 0);
+});
+
+check('-L exit 1 (no output) when every file matches', () => {
+  const { stdout, status } = run(['div.a', '-L', fMulti], { expectStatus: 1 });
+  assert.strictEqual(stdout, '');
+  assert.strictEqual(status, 1);
+});
+
+check('-q: no output, exit 0 on match', () => {
+  const { stdout, status } = run(['div.a', '-q'], { input: multiline });
+  assert.strictEqual(stdout, '');
+  assert.strictEqual(status, 0);
+});
+
+check('-q: exit 1 when no match', () => {
+  const { stdout, status } = run(['.nope', '-q'], { input: multiline, expectStatus: 1 });
+  assert.strictEqual(stdout, '');
+  assert.strictEqual(status, 1);
+});
+
+check('two aggregate modes (-c -l): exit status 2', () => {
+  const { status } = run(['div.a', '-c', '-l'], { input: multiline, expectStatus: 2 });
+  assert.strictEqual(status, 2);
+});
+
+check('clustered aggregates (-lq): exit status 2', () => {
+  const { status } = run(['div.a', '-lq'], { input: multiline, expectStatus: 2 });
+  assert.strictEqual(status, 2);
+});
+
 check('--print: no line:col locator, lone text child stays inline', () => {
   const { stdout } = run(['p#x', '-p'], { input: multiline });
   const lines = stdout.trimEnd().split('\n');
