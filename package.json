@@ -6,10 +6,12 @@
   "bin": {
     "cssgrep": "index.js"
   },
+  "man": "./man/cssgrep.1",
   "files": [
     "index.js",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "man/cssgrep.1"
   ],
   "engines": {
     "node": ">=20.19.0"

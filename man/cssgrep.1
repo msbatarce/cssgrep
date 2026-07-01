@@ -1,0 +1,217 @@
+.\" Man page for cssgrep. Keep the OPTIONS section in sync with the USAGE
+.\" string in index.js.
+.TH CSSGREP 1 "2026-06-29" "cssgrep 1.0.0" "User Commands"
+.SH NAME
+cssgrep \- search HTML by CSS selector, grep-style
+.SH SYNOPSIS
+.B cssgrep
+.I selector
+.RI [ file ...]
+.br
+.B cssgrep
+.I selector
+.B \-r
+.IR dir ...
+.br
+.B cat
+.I file.html
+| \fBcssgrep\fR \fIselector\fR
+.SH DESCRIPTION
+.B cssgrep
+matches a CSS
+.I selector
+against parsed HTML and prints each hit grep-style. Unlike most HTML query
+tools it tracks the source byte offset of every matched node, so
+.B \-n
+reports an accurate
+.IR line : col
+even on minified, single-line HTML, and the output plugs straight into
+grep-aware editors (vim's
+.BR grepprg ).
+.PP
+Input is read from the
+.I file
+arguments, recursively from directories with
+.BR \-r ,
+or from standard input when no path is given. One line is printed per match.
+As with
+.BR grep ,
+the matched line is printed on its own; a
+.RI " file :"
+prefix is added when searching multiple files, and the
+.IR line : col
+locator appears only with
+.BR \-n .
+.SH OPTIONS
+.TP
+.BR \-r ", " \-\-recursive
+Recurse into directory arguments (defaults to the current directory if none
+are given).
+.TP
+.BI \-\-ext " list"
+Comma-separated extensions to scan with
+.B \-r
+(default:
+.IR html,htm ).
+.TP
+.BR \-i ", " \-\-ignore " \fIglob\fR"
+Skip files/dirs matching
+.I glob
+while recursing (repeatable).
+.TP
+.BI \-\-ignore\-file " path"
+Read ignore globs from
+.IR path ,
+one per line
+.RB ( #
+comments and blank lines ignored), like a
+.IR .gitignore .
+.TP
+.BR \-n ", " \-\-line\-number
+Prefix each match with its
+.IR line : col
+locator. Excludes
+.B \-c
+and
+.BR \-p .
+.TP
+.BR \-p ", " \-\-print
+Pretty-print the matched node's HTML, re-indented from scratch. No
+.IR line : col
+locator is shown.
+.TP
+.BI \-\-attr " name"
+Print the value of attribute
+.I name
+for each match (nodes without it are skipped).
+.TP
+.B \-\-text
+Print the matched node's text content, whitespace collapsed.
+.TP
+.B \-\-json
+Print one JSON object per match (NDJSON) with
+.IR file ", " line ", " col ", " html ", " text .
+.TP
+.BI \-\-parent " n"
+Report the
+.IR n -th
+element ancestor of each match instead of the match itself (de-duplicated).
+.TP
+.BR \-w ", " \-\-max\-width " \fIn\fR"
+Truncate the shown line to
+.I n
+columns (adds an ellipsis).
+.TP
+.BR \-A ", " \-\-after\-context " \fIn\fR"
+Print
+.I n
+source lines after each match.
+.TP
+.BR \-B ", " \-\-before\-context " \fIn\fR"
+Print
+.I n
+source lines before each match.
+.TP
+.BR \-C ", " \-\-context " \fIn\fR"
+Print
+.I n
+source lines before and after each match.
+.TP
+.BR \-m ", " \-\-max\-count " \fIn\fR"
+Stop after
+.I n
+matches per file.
+.TP
+.BR \-M ", " \-\-max\-total " \fIn\fR"
+Stop after
+.I n
+matches in total across all files.
+.TP
+.BR \-c ", " \-\-count
+Print only a count of matches (per file when relevant).
+.TP
+.BR \-l ", " \-\-files\-with\-matches
+Print only the names of files that have a match.
+.TP
+.BR \-L ", " \-\-files\-without\-match
+Print only the names of files with no match.
+.TP
+.BR \-q ", " \-\-quiet
+Print nothing; exit 0 on the first match, 1 if none.
+.TP
+.BR \-0 ", " \-\-null
+Separate the file name with a NUL byte (for
+.BR "xargs \-0" ).
+.TP
+.BR \-\-color [ =\fIwhen\fR ]
+Colorize output:
+.I auto
+(default),
+.IR always ", or " never .
+A bare
+.B \-\-color
+means
+.IR always .
+.TP
+.BR \-h ", " \-\-help
+Show help and exit.
+.TP
+.BR \-V ", " \-\-version
+Show version and exit.
+.PP
+Boolean short flags combine
+.RB ( \-rn
+is
+.BR "\-r \-n" ),
+and a value-taking flag may close such a cluster
+.RB ( \-rnw100 ).
+Long options take a value with
+.B =
+or as the next word
+.RB ( \-\-max\-width=100 ", " "\-\-ext htm" ).
+.SH EXIT STATUS
+.TP
+.B 0
+One or more matches were found.
+.TP
+.B 1
+No matches were found.
+.TP
+.B 2
+An error occurred (bad option, unreadable file, invalid selector).
+.SH EXAMPLES
+.TP
+Find every link in a page:
+.B cssgrep a page.html
+.TP
+Locate inputs with a locator, even in minified HTML:
+.B cssgrep \-n "input[name]" min.html
+.TP
+Recurse a tree, skipping vendored files:
+.B cssgrep \-rn .error \-i node_modules src/
+.TP
+Extract attribute values for scripting:
+.B cssgrep \-\-attr href "a.external" page.html
+.SH VIM INTEGRATION
+Wire
+.B cssgrep
+into vim's
+.B :grep
+by pointing
+.B grepprg
+at it and teaching
+.B grepformat
+the
+.IR file : line : col
+locator:
+.PP
+.RS
+.nf
+set grepprg=cssgrep\e \-n\e \-r
+set grepformat=%f:%l:%c\e %m
+.fi
+.RE
+.SH SEE ALSO
+.BR grep (1)
+.SH AUTHOR
+matias

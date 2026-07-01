@@ -22,7 +22,9 @@ npm install        # install deps
 npm link           # put `cssgrep` on your PATH (optional)
 ```
 
-Check the installed version with `cssgrep --version`.
+Check the installed version with `cssgrep --version`. A global install also
+puts a man page on your `MANPATH`, so `man cssgrep` works; from a clone, read it
+with `man ./man/cssgrep.1`.
 
 ## Usage
 
