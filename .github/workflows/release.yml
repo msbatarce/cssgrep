@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write   # OIDC for npm publish provenance
 
 jobs:
   release:
@@ -40,6 +41,6 @@ jobs:
       # Opt-in: set the NPM_TOKEN repository secret to publish to npm on tag.
       - name: Publish to npm
         if: ${{ env.NPM_TOKEN != '' }}
-        run: npm publish --access public
+        run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
