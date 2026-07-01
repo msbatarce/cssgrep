@@ -42,6 +42,13 @@ Bun cross-compiles all targets from one machine, so this is what CI uses to
 produce release artifacts. `npm run build:linux-x64` (etc.) builds a single
 target.
 
+If you'd rather not install Bun, `npm run build:sea` produces a binary using
+[Node's built-in SEA](https://nodejs.org/api/single-executable-applications.html)
+(needs the `esbuild`/`postject` devDependencies). The catch: Node SEA **cannot
+cross-compile** — it embeds the node you run it with, so you only get a binary
+for the current OS and architecture. Bun is the better choice for multi-platform
+releases.
+
 ## Usage
 
 ```sh
