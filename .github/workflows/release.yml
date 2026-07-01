@@ -28,6 +28,14 @@ jobs:
       # Bun cross-compiles every target from this one runner.
       - name: Build standalone binaries
         run: npm run build:binaries
+      # Sanity-check the native (linux-x64) artifact before shipping it. The
+      # other platforms' binaries can't run on this runner; the test matrix in
+      # test.yml covers the source on macOS/Windows.
+      - name: Smoke-test the built binary
+        run: |
+          ./dist/cssgrep-linux-x64 --version
+          out=$(./dist/cssgrep-linux-x64 a testdata/blog.html)
+          test -n "$out"
       - name: Generate checksums
         working-directory: dist
         run: sha256sum cssgrep-* > SHA256SUMS.txt
