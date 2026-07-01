@@ -1,5 +1,9 @@
 # cssgrep
 
+[![npm](https://img.shields.io/npm/v/cssgrep.svg)](https://www.npmjs.com/package/cssgrep)
+[![test](https://github.com/msbatarce/cssgrep/actions/workflows/test.yml/badge.svg)](https://github.com/msbatarce/cssgrep/actions/workflows/test.yml)
+[![license](https://img.shields.io/npm/l/cssgrep.svg)](LICENSE)
+
 Search HTML by CSS selector and print each match, grep-style — add `-n` to
 report it as `file:line:col`.
 

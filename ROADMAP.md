@@ -137,9 +137,9 @@ Considered during the v1.1 round and intentionally left out for now:
   but ongoing per-release maintenance; deferred.
 - **`-f`/`-e` (patterns from a file / multiple `-e`)** — low value: a CSS
   selector list (`a, .b`) already expresses multi-selector OR in one argument.
-- **Repo docs polish** — README status badges, a committed `CHANGELOG.md` (the
-  release workflow auto-generates GitHub Release notes today), and a
-  `CONTRIBUTING.md`. Add when desired.
+- **Repo docs polish** — a committed `CHANGELOG.md` (the release workflow
+  auto-generates GitHub Release notes today) and a `CONTRIBUTING.md`. Add when
+  desired.
 - **`-a`/`--text` binary override** — force-parse a file the binary heuristic
   skipped. Add if a real need appears.
 
