@@ -52,6 +52,7 @@ locator appears only with `-n`:
 | `-l`, `--files-with-matches` | Print only the names of files that contain a match. |
 | `-L`, `--files-without-match` | Print only the names of files with no match. |
 | `-q`, `--quiet` | Print nothing; exit `0` on the first match, `1` if none. Stops early. |
+| `-0`, `--null` | Output a NUL after each file name instead of `:` (or, with `-l`/`-L`, instead of the newline) — pipe to `xargs -0`. |
 | `--color[=<when>]` | Colorize output: `auto` (default — color only when stdout is a terminal), `always`, or `never`. A bare `--color` means `always`. |
 | `-h`, `--help` | Show help. |
 

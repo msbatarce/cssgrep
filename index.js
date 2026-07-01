@@ -35,6 +35,7 @@ Options:
   -l, --files-with-matches   Print only the names of files that have a match.
   -L, --files-without-match  Print only the names of files with no match.
   -q, --quiet            Print nothing; exit 0 on first match, 1 if none.
+  -0, --null             Separate the file name with a NUL byte (for xargs -0).
       --color[=<when>]   Colorize output: auto (default), always or never.
   -h, --help             Show this help.
 
@@ -80,6 +81,7 @@ function parseArgs(argv) {
     attr: null,
     text: false,
     json: false,
+    nul: false,
     color: 'auto',
   };
   const setExts = v => {
@@ -113,6 +115,7 @@ function parseArgs(argv) {
         case '--files-with-matches': opts.filesWithMatches = true; break;
         case '--files-without-match': opts.filesWithoutMatch = true; break;
         case '--quiet': case '--silent': opts.quiet = true; break;
+        case '--null': opts.nul = true; break;
         case '--ext': setExts(value()); break;
         case '--max-width': setMaxWidth(value()); break;
         case '--max-count': setMaxCount(value()); break;
@@ -145,6 +148,7 @@ function parseArgs(argv) {
           case 'l': opts.filesWithMatches = true; break;
           case 'L': opts.filesWithoutMatch = true; break;
           case 'q': opts.quiet = true; break;
+          case '0': case 'Z': opts.nul = true; break;
           default: fail(`unknown option: -${ch}`);
         }
       }
@@ -299,7 +303,8 @@ function searchSource(src, name, showLabel, opts, out) {
   const limited = opts.maxCount ? matches.slice(0, opts.maxCount) : matches;
   if (opts.count) {
     if (limited.length) {
-      out.push(label ? `${label}:${limited.length}` : String(limited.length));
+      const fileSep = opts.nul ? '\0' : ':';
+      out.push(label ? `${label}${fileSep}${limited.length}` : String(limited.length));
     }
     return limited.length;
   }
@@ -349,8 +354,11 @@ function searchSource(src, name, showLabel, opts, out) {
     // locator only with -n. The locator is separated from the text by a space
     // so the output stays :grep-compatible (grepformat %f:%l:%c %m).
     const sep = c(COLORS.sep, ':');
+    // -0/--null: the char after the file name becomes NUL (grep -Z), for
+    // unambiguous machine parsing (e.g. xargs -0).
+    const fileSep = opts.nul ? '\0' : sep;
     let prefix = '';
-    if (label) prefix += c(COLORS.file, label) + sep;
+    if (label) prefix += c(COLORS.file, label) + fileSep;
     if (opts.lineNumber) {
       prefix += c(COLORS.line, String(pos.line)) + sep + c(COLORS.line, String(pos.col)) + ' ';
     }
@@ -433,7 +441,16 @@ function main() {
     fail(e.message);
   }
 
-  if (out.length) process.stdout.write(out.join('\n') + '\n');
+  if (out.length) {
+    // For -l/-L, -0 NUL-terminates each file name (no newline) so the list is
+    // safe for `xargs -0`. Other modes keep newline-separated records (with -0
+    // the NUL appears only as the in-record file-name separator).
+    if (opts.nul && (opts.filesWithMatches || opts.filesWithoutMatch)) {
+      process.stdout.write(out.map(s => s + '\0').join(''));
+    } else {
+      process.stdout.write(out.join('\n') + '\n');
+    }
+  }
   // Normally success means "a match was found". With -L it means "a file
   // without a match was printed", which is decoupled from the match total.
   const success = opts.filesWithoutMatch ? out.length > 0 : total > 0;

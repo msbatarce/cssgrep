@@ -303,6 +303,25 @@ check('--json with -p: exit status 2', () => {
   assert.strictEqual(status, 2);
 });
 
+// --- -0 / --null -------------------------------------------------------------
+check('-l -0 NUL-terminates file names, no newlines', () => {
+  const { stdout } = run(['div.a', '-l', '-0', '-r', tmp]);
+  assert.ok(!stdout.includes('\n'), 'no newlines with -l -0');
+  const names = stdout.split('\0').filter(Boolean);
+  assert.ok(names.includes(fMulti) && names.includes(fNested), stdout);
+});
+
+check('-0 line output uses NUL after the file name, keeps newlines', () => {
+  const { stdout } = run(['p#x', '-n', '-0', fMulti, fNested]);
+  const first = stdout.split('\n')[0];
+  assert.strictEqual(first, `${fMulti}\x005:5     <p id="x">two</p>`);
+});
+
+check('-0 count output uses NUL after the file name', () => {
+  const { stdout } = run(['div.a', '-c', '-0', fMulti, fNested]);
+  assert.ok(stdout.split('\n')[0].startsWith(`${fMulti}\x00`), JSON.stringify(stdout));
+});
+
 check('--print: no line:col locator, lone text child stays inline', () => {
   const { stdout } = run(['p#x', '-p'], { input: multiline });
   const lines = stdout.trimEnd().split('\n');
