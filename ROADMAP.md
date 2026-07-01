@@ -6,6 +6,11 @@ grep-family flags plus HTML-specific capabilities plain grep can't offer.
 **Process:** implement in phase order. **Each feature is its own commit** (code +
 tests + docs, suite green) — see `CLAUDE.md`. Phases are independently shippable.
 
+**Status: all phases below are implemented (2026-06-29).** Phases 0–4 shipped:
+`-m`, `-l`/`-L`/`-q`, `--attr`/`--text`, `--json`, `-0`/`--null`, `--parent`,
+and `-A`/`-B`/`-C`. This file is kept as the design record; future work can
+extend it.
+
 ## Output-mode model (design backbone)
 
 New flags compose cleanly only as three independent axes; place each feature on
