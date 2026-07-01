@@ -1,10 +1,11 @@
 # cssgrep
 
-Search HTML by CSS selector and report each match as `file:line:col`, grep-style.
+Search HTML by CSS selector and print each match, grep-style — add `-n` to
+report it as `file:line:col`.
 
 Unlike most HTML query tools, `cssgrep` tracks the **source position** of every
-matched node — so it works even on minified, single-line HTML, and its output
-plugs straight into grep-aware editors.
+matched node — so it works even on minified, single-line HTML, and (with `-n`)
+its output plugs straight into grep-aware editors.
 
 ## Install
 
@@ -23,11 +24,15 @@ cssgrep <selector> -r <dir ...>    # recurse directories
 cat page.html | cssgrep <selector> # read from stdin
 ```
 
-Output, one line per match:
+Output, one line per match. Like `grep`, the matched line is printed on its own;
+a `file:` prefix is added when searching multiple files, and the `line:col`
+locator appears only with `-n`:
 
 ```
-{line}:{col} {line contents}            # stdin, or a single file
-{file}:{line}:{col} {line contents}     # multiple files / recursive
+{line contents}                         # default; stdin or single file
+{file}:{line contents}                  # default; multiple files
+{line}:{col} {line contents}            # -n; stdin or single file
+{file}:{line}:{col} {line contents}     # -n; multiple files
 ```
 
 ### Options
@@ -36,10 +41,17 @@ Output, one line per match:
 |------|-------------|
 | `-r`, `--recursive` | Recurse into directory arguments (defaults to `.` if none given). |
 | `--ext <list>` | Extensions to scan with `-r` (default `html,htm`). |
+| `-n`, `--line-number` | Prefix each match with its `line:col` locator. Mutually exclusive with `-c` and `-p`. |
 | `-p`, `--print` | Pretty-print the matched node's HTML, re-indented from scratch (works on minified input). No `line:col` locator is shown. |
 | `-w`, `--max-width <n>` | Truncate the shown line to `n` columns (adds `…`). |
 | `-c`, `--count` | Print only the match count (per file when relevant). |
+| `--color[=<when>]` | Colorize output: `auto` (default — color only when stdout is a terminal), `always`, or `never`. A bare `--color` means `always`. |
 | `-h`, `--help` | Show help. |
+
+When coloring is on, the matched node is highlighted within its line (grep's
+bold-red); the `file:` prefix and `line:col` locator get their own colors
+(magenta and green, like grep). Under `-p` nothing is colored — the node is
+lifted out of its line, so there's no in-line match to highlight.
 
 Exit status: `0` if any match was found, `1` if none, `2` on error — same
 convention as `grep`.
@@ -59,11 +71,11 @@ curl -s https://example.com | cssgrep 'p a'
 
 ## Vim / Neovim integration
 
-The `file:line:col text` format is `:grep`-compatible. Point `grepprg` at it and
-hits land in the quickfix list:
+The `file:line:col text` format produced by `-n` is `:grep`-compatible. Point
+`grepprg` at `cssgrep -n -r` and hits land in the quickfix list:
 
 ```vim
-set grepprg=cssgrep\ -r
+set grepprg=cssgrep\ -n\ -r
 set grepformat=%f:%l:%c\ %m
 
 " :grep 'div.card' src/   then  :copen
@@ -72,7 +84,7 @@ set grepformat=%f:%l:%c\ %m
 For a single buffer's HTML:
 
 ```vim
-:cexpr system('cssgrep ' . shellescape(input('selector> ')) . ' ' . shellescape(expand('%')))
+:cexpr system('cssgrep -n ' . shellescape(input('selector> ')) . ' ' . shellescape(expand('%')))
 ```
 
 ## How it works

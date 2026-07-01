@@ -16,15 +16,19 @@ Usage:
   cat file.html | cssgrep <selector>
 
 Output (one line per match):
-  {line}:{col} {line contents}              (stdin, or a single file)
-  {file}:{line}:{col} {line contents}       (multiple files / recursive)
+  {line contents}                           (default; stdin or single file)
+  {file}:{line contents}                    (default; multiple files)
+  {line}:{col} {line contents}              (with -n; stdin or single file)
+  {file}:{line}:{col} {line contents}       (with -n; multiple files)
 
 Options:
   -r, --recursive        Recurse into directory arguments.
       --ext <list>       Comma-separated extensions for -r (default: html,htm).
+  -n, --line-number      Prefix each match with its line:col (excludes -c, -p).
   -p, --print            Pretty-print the matched node's HTML above its location.
   -w, --max-width <n>    Truncate the shown line to <n> columns (ellipsis added).
   -c, --count            Print only a count of matches (per file when relevant).
+      --color[=<when>]   Colorize output: auto (default), always or never.
   -h, --help             Show this help.
 
 Exit status: 0 if any match was found, 1 if none, 2 on error.`;
@@ -34,6 +38,19 @@ function fail(msg) {
   process.exit(2);
 }
 
+// ANSI SGR codes matching grep's default scheme: bold-red match, magenta
+// filename, green line/col numbers, cyan separators.
+const COLORS = {
+  match: '1;31',
+  file: '35',
+  line: '32',
+  sep: '36',
+};
+
+function paint(code, str) {
+  return `\x1b[${code}m${str}\x1b[0m`;
+}
+
 function parseArgs(argv) {
   const opts = {
     selector: null,
@@ -41,12 +58,21 @@ function parseArgs(argv) {
     paths: [],
     recursive: false,
     exts: ['html', 'htm'],
+    lineNumber: false,
     print: false,
     maxWidth: 0,
     count: false,
+    color: 'auto',
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
+    // --color[=WHEN]: handled before the switch so the optional `=WHEN` suffix
+    // (and the British spelling) match. A bare --color means "always", as grep.
+    if (a === '--color' || a === '--colour') { opts.color = 'always'; continue; }
+    if (a.startsWith('--color=') || a.startsWith('--colour=')) {
+      opts.color = a.slice(a.indexOf('=') + 1);
+      continue;
+    }
     switch (a) {
       case '-h': case '--help':
         process.stdout.write(USAGE + '\n');
@@ -54,6 +80,9 @@ function parseArgs(argv) {
         break;
       case '-r': case '--recursive':
         opts.recursive = true;
+        break;
+      case '-n': case '--line-number':
+        opts.lineNumber = true;
         break;
       case '-p': case '--print':
         opts.print = true;
@@ -76,6 +105,16 @@ function parseArgs(argv) {
     }
   }
   if (opts.positionals.length === 0) fail('no selector given (try --help)');
+  if (opts.lineNumber && opts.count) fail('-n cannot be combined with -c');
+  if (opts.lineNumber && opts.print) fail('-n cannot be combined with -p');
+  if (!['auto', 'always', 'never'].includes(opts.color)) {
+    fail(`invalid --color value: ${opts.color} (expected auto, always or never)`);
+  }
+  // Resolve the tri-state into a single boolean: color only when forced on, or
+  // 'auto' and stdout is an interactive terminal. -p never colors (the node is
+  // lifted out of its line, so there's no in-line match to highlight).
+  opts.colorOn = !opts.print &&
+    (opts.color === 'always' || (opts.color === 'auto' && Boolean(process.stdout.isTTY)));
   return opts;
 }
 
@@ -142,6 +181,25 @@ function truncate(text, maxWidth) {
   return text.slice(0, maxWidth - 1) + '…'; // …
 }
 
+// Produce the visible match text: truncate first (so --max-width still measures
+// real columns, never escape sequences), then — when coloring — wrap the part
+// of the matched node that falls on this line in the match color. A node can
+// span multiple lines while we only print its opening line, so the highlight is
+// clamped to what's visible; a match scrolled past the truncation point isn't
+// highlighted at all (and the trailing ellipsis is never colored).
+function renderText(pos, off, nodeEnd, opts) {
+  const vis = truncate(pos.text, opts.maxWidth);
+  if (!opts.colorOn) return vis;
+  const truncated = opts.maxWidth && pos.text.length > opts.maxWidth;
+  const effLen = truncated ? Math.max(0, opts.maxWidth - 1) : vis.length;
+  let s = pos.col - 1;             // match start within the line (0-based)
+  let e = s + (nodeEnd - off);     // match end within the line
+  s = Math.max(0, Math.min(s, effLen));
+  e = Math.max(s, Math.min(e, effLen));
+  if (e <= s) return vis;          // nothing of the match is visible
+  return vis.slice(0, s) + paint(COLORS.match, vis.slice(s, e)) + vis.slice(e);
+}
+
 // Re-indent a matched node's HTML from scratch (so minified input still comes
 // out readable). dom-serializer turns the parsed node back into a string;
 // js-beautify does the formatting.
@@ -174,8 +232,19 @@ function searchSource(src, label, opts, out) {
     }
     const off = el.startIndex == null ? 0 : el.startIndex;
     const pos = offsetToPosition(starts, src, off);
-    const prefix = label ? `${label}:` : '';
-    out.push(`${prefix}${pos.line}:${pos.col} ${truncate(pos.text, opts.maxWidth)}`);
+    const nodeEnd = (el.endIndex == null ? off : el.endIndex) + 1; // exclusive
+    const text = renderText(pos, off, nodeEnd, opts);
+    // grep-style: a `file:` prefix appears with multiple files; the line:col
+    // locator only with -n. The locator is separated from the text by a space
+    // so the output stays :grep-compatible (grepformat %f:%l:%c %m).
+    const c = opts.colorOn ? paint : (_, s) => s;
+    const sep = c(COLORS.sep, ':');
+    let prefix = '';
+    if (label) prefix += c(COLORS.file, label) + sep;
+    if (opts.lineNumber) {
+      prefix += c(COLORS.line, String(pos.line)) + sep + c(COLORS.line, String(pos.col)) + ' ';
+    }
+    out.push(prefix + text);
   }
   return matches.length;
 }
