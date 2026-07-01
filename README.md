@@ -48,6 +48,9 @@ locator appears only with `-n`:
 | `--json` | Print one JSON object per match (NDJSON), with `file`, `line`, `col`, `html`, `text`. |
 | `--parent <n>` | Report the `n`-th element ancestor of each match instead of the match itself (de-duplicated). Pairs well with `-p`. |
 | `-w`, `--max-width <n>` | Truncate the shown line to `n` columns (adds `…`). Value attaches or follows: `-w100`, `-w 100`, `--max-width=100`. |
+| `-A`, `--after-context <n>` | Print `n` source lines after each match. |
+| `-B`, `--before-context <n>` | Print `n` source lines before each match. |
+| `-C`, `--context <n>` | Print `n` source lines before and after each match. |
 | `-m`, `--max-count <n>` | Stop after `n` matches per file (caps `-c` too). |
 | `-c`, `--count` | Print only the match count (per file when relevant). |
 | `-l`, `--files-with-matches` | Print only the names of files that contain a match. |

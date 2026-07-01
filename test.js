@@ -359,6 +359,59 @@ check('--parent in line mode reports the ancestor position', () => {
   assert.strictEqual(stdout.split('\n')[0].split(' ')[0], '2:3');  // <article> at line 2 col 3
 });
 
+// --- context (-A / -B / -C) -------------------------------------------------
+const ctxDoc =
+  '<a>1</a>\n<b class="m">2</b>\n<c>3</c>\n<d>4</d>\n<e>5</e>\n<f class="m">6</f>\n<g>7</g>\n';
+
+check('-C1 prints before/after with `--` between non-contiguous groups', () => {
+  const { stdout } = run(['.m', '-C1', '-n'], { input: ctxDoc });
+  assert.deepStrictEqual(stdout.trimEnd().split('\n'), [
+    '1-<a>1</a>',
+    '2:1 <b class="m">2</b>',
+    '3-<c>3</c>',
+    '--',
+    '5-<e>5</e>',
+    '6:1 <f class="m">6</f>',
+    '7-<g>7</g>',
+  ]);
+});
+
+check('-A1 prints only following lines', () => {
+  const { stdout } = run(['.m', '-A1', '-n'], { input: '<b class="m">1</b>\n<c>2</c>\n' });
+  const lines = stdout.trimEnd().split('\n');
+  assert.strictEqual(lines[0], '1:1 <b class="m">1</b>');
+  assert.strictEqual(lines[1], '2-<c>2</c>');
+});
+
+check('-B1 prints only preceding lines', () => {
+  const { stdout } = run(['.m', '-B1', '-n'], { input: '<a>0</a>\n<b class="m">1</b>\n' });
+  const lines = stdout.trimEnd().split('\n');
+  assert.strictEqual(lines[0], '1-<a>0</a>');
+  assert.strictEqual(lines[1], '2:1 <b class="m">1</b>');
+});
+
+check('context windows merge for nearby matches (no separator)', () => {
+  const adj = '<a>0</a>\n<b class="m">1</b>\n<c class="m">2</c>\n<d>3</d>\n';
+  const { stdout } = run(['.m', '-C1'], { input: adj });
+  assert.ok(!stdout.includes('--'), stdout);
+  assert.strictEqual(stdout.trimEnd().split('\n').length, 4);  // lines 1-4, merged
+});
+
+check('-B clamps at the start of the file', () => {
+  const { stdout } = run(['.m', '-B2', '-n'], { input: '<b class="m">x</b>\n<c>y</c>\n' });
+  assert.strictEqual(stdout.trimEnd().split('\n')[0], '1:1 <b class="m">x</b>');
+});
+
+check('-C2 attached value form', () => {
+  const { stdout } = run(['.m', '-C2', '-n'], { input: ctxDoc });
+  assert.ok(stdout.includes('2:1 <b class="m">2</b>'), stdout);
+});
+
+check('context with an aggregate (-c): exit status 2', () => {
+  const { status } = run(['.m', '-C1', '-c'], { input: ctxDoc, expectStatus: 2 });
+  assert.strictEqual(status, 2);
+});
+
 check('--print: no line:col locator, lone text child stays inline', () => {
   const { stdout } = run(['p#x', '-p'], { input: multiline });
   const lines = stdout.trimEnd().split('\n');

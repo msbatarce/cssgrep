@@ -31,6 +31,9 @@ Options:
       --json             Print one JSON record per match (NDJSON: file,line,col,html,text).
       --parent <n>       Report the n-th ancestor of each match instead (dedup'd).
   -w, --max-width <n>    Truncate the shown line to <n> columns (ellipsis added).
+  -A, --after-context <n>    Print <n> source lines after each match.
+  -B, --before-context <n>   Print <n> source lines before each match.
+  -C, --context <n>          Print <n> source lines before and after each match.
   -m, --max-count <n>    Stop after <n> matches per file.
   -c, --count            Print only a count of matches (per file when relevant).
   -l, --files-with-matches   Print only the names of files that have a match.
@@ -84,21 +87,27 @@ function parseArgs(argv) {
     json: false,
     nul: false,
     parent: 0,
+    before: 0,
+    after: 0,
     color: 'auto',
   };
   const setExts = v => {
     opts.exts = (v || '').split(',').map(s => s.trim().replace(/^\./, '')).filter(Boolean);
   };
-  const positiveInt = (v, what) => {
+  const boundedInt = (v, what, min) => {
     const n = parseInt(v, 10);
-    if (!Number.isFinite(n) || n <= 0) fail(`invalid ${what} value`);
+    if (!Number.isFinite(n) || n < min) fail(`invalid ${what} value`);
     return n;
   };
+  const positiveInt = (v, what) => boundedInt(v, what, 1);
   const setMaxWidth = v => { opts.maxWidth = positiveInt(v, '--max-width'); };
   const setMaxCount = v => { opts.maxCount = positiveInt(v, '--max-count'); };
   const setParent = v => { opts.parent = positiveInt(v, '--parent'); };
+  const setAfter = v => { opts.after = boundedInt(v, '--after-context', 0); };
+  const setBefore = v => { opts.before = boundedInt(v, '--before-context', 0); };
+  const setContext = v => { opts.after = opts.before = boundedInt(v, '--context', 0); };
   // Short flags that take a value (rest of the cluster, or the next argument).
-  const shortValueFlags = { w: setMaxWidth, m: setMaxCount };
+  const shortValueFlags = { w: setMaxWidth, m: setMaxCount, A: setAfter, B: setBefore, C: setContext };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
 
@@ -126,6 +135,9 @@ function parseArgs(argv) {
         case '--text': opts.text = true; break;
         case '--json': opts.json = true; break;
         case '--parent': setParent(value()); break;
+        case '--after-context': setAfter(value()); break;
+        case '--before-context': setBefore(value()); break;
+        case '--context': setContext(value()); break;
         case '--color': case '--colour': opts.color = inline != null ? inline : 'always'; break;
         default: fail(`unknown option: ${name}`);
       }
@@ -169,6 +181,12 @@ function parseArgs(argv) {
   // Per-match print modes choose what is printed for each match; only one.
   const printModes = [opts.print, opts.attr != null, opts.text, opts.json].filter(Boolean).length;
   if (printModes > 1) fail('only one of -p, --attr, --text, --json may be given');
+  // Context surrounds source lines, so it only makes sense for the default line
+  // output — not the print modes or the content-suppressing aggregate modes.
+  if (opts.before > 0 || opts.after > 0) {
+    if (printModes > 0) fail('context (-A/-B/-C) cannot be combined with -p/--attr/--text/--json');
+    if (aggregates > 0) fail('context (-A/-B/-C) cannot be combined with -c/-l/-L/-q');
+  }
   if (opts.lineNumber && opts.count) fail('-n cannot be combined with -c');
   if (opts.lineNumber && opts.print) fail('-n cannot be combined with -p');
   if (!['auto', 'always', 'never'].includes(opts.color)) {
@@ -237,6 +255,17 @@ function offsetToPosition(starts, src, offset) {
     col: offset - lineStart + 1, // 1-based
     text,
   };
+}
+
+// Text of a 1-based line number, with the trailing \r stripped (CRLF), plus the
+// line's byte start (so a node's offset maps to a column within it).
+function lineTextAt(starts, src, lineNo) {
+  const lineStart = starts[lineNo - 1];
+  let lineEnd = src.indexOf('\n', lineStart);
+  if (lineEnd === -1) lineEnd = src.length;
+  let text = src.slice(lineStart, lineEnd);
+  if (text.endsWith('\r')) text = text.slice(0, -1);
+  return { lineStart, text };
 }
 
 function truncate(text, maxWidth) {
@@ -312,6 +341,58 @@ function prettyPrint(el) {
   });
 }
 
+// -A/-B/-C: emit each match line plus its surrounding context lines, grep-style.
+// Match lines use `:` field separators and keep the match-node highlight;
+// context lines use `-` and no highlight. Overlapping context windows merge,
+// and `--` separates non-contiguous groups.
+function emitContext(src, starts, name, showLabel, targets, opts, out) {
+  const label = showLabel ? name : null;
+  const c = opts.colorOn ? paint : (_, s) => s;
+  const lineCount = src.length === 0 ? 0 : (src.endsWith('\n') ? starts.length - 1 : starts.length);
+
+  // Map each match line to a representative node span (the first match on it),
+  // which drives the in-line highlight when coloring.
+  const info = new Map();
+  for (const el of targets) {
+    const off = el.startIndex == null ? 0 : el.startIndex;
+    const pos = offsetToPosition(starts, src, off);
+    if (info.has(pos.line)) continue;
+    const nodeEnd = (el.endIndex == null ? off : el.endIndex) + 1;
+    info.set(pos.line, { off, nodeEnd, pos });
+  }
+
+  // Expand match lines to [L-before, L+after] windows and merge adjacent ones.
+  const ranges = [];
+  for (const L of [...info.keys()].sort((a, b) => a - b)) {
+    const lo = Math.max(1, L - opts.before);
+    const hi = Math.min(lineCount, L + opts.after);
+    const last = ranges[ranges.length - 1];
+    if (last && lo <= last.hi + 1) last.hi = Math.max(last.hi, hi);
+    else ranges.push({ lo, hi });
+  }
+
+  let firstGroup = true;
+  for (const { lo, hi } of ranges) {
+    if (!firstGroup) out.push('--');
+    firstGroup = false;
+    for (let L = lo; L <= hi; L++) {
+      const m = info.get(L);
+      const sepColored = c(COLORS.sep, m ? ':' : '-');
+      let prefix = '';
+      if (label) prefix += c(COLORS.file, label) + (opts.nul ? '\0' : sepColored);
+      if (opts.lineNumber) {
+        prefix += c(COLORS.line, String(L));
+        prefix += m ? c(COLORS.sep, ':') + c(COLORS.line, String(m.pos.col)) + ' '
+                    : c(COLORS.sep, '-');
+      }
+      const body = m
+        ? renderText(m.pos, m.off, m.nodeEnd, opts)        // highlight + truncate
+        : truncate(lineTextAt(starts, src, L).text, opts.maxWidth);
+      out.push(prefix + body);
+    }
+  }
+}
+
 // `name` is the source's display name (file path, or "(standard input)"); it is
 // used by the aggregate modes (-l/-L/-c). `showLabel` decides whether per-match
 // lines carry a `file:` prefix (only when more than one file is searched).
@@ -341,6 +422,10 @@ function searchSource(src, name, showLabel, opts, out) {
   // --parent re-targets matches to ancestors (no-op without it). Aggregate
   // modes above operate on the raw matches; targeting only affects what prints.
   const targets = retarget(limited, opts);
+  if (opts.before > 0 || opts.after > 0) {
+    emitContext(src, starts, name, showLabel, targets, opts, out);
+    return limited.length;
+  }
   if (opts.json) {
     // NDJSON: one self-contained record per match. `html` is the exact source
     // slice; newlines are escaped by JSON.stringify, so each record stays on
