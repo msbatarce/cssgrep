@@ -33,7 +33,13 @@ Input is read from the
 .I file
 arguments, recursively from directories with
 .BR \-r ,
-or from standard input when no path is given. One line is printed per match.
+or from standard input when no path is given. Binary files (a NUL byte or a
+high ratio of control bytes in the first 8 KB) are skipped with a note on
+standard error, suppressible with
+.B \-s
+or
+.BR \-q .
+One line is printed per match.
 As with
 .BR grep ,
 the matched line is printed on its own; a

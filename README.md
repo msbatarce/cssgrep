@@ -103,6 +103,10 @@ locator appears only with `-n`:
 Boolean short flags can be combined into one token (`-rn` is `-r -n`), and a
 value-taking flag may close such a cluster (`-rnw100`).
 
+Binary files are detected (a NUL byte or a high ratio of control bytes in the
+first 8 KB) and skipped with a note on stderr — parsing them as HTML is never
+useful. Suppress the note with `-s` (or `-q`).
+
 When coloring is on, the matched node is highlighted within its line (grep's
 bold-red); the `file:` prefix and `line:col` locator get their own colors
 (magenta and green, like grep). Plain `-p` prints no color (the whole block is

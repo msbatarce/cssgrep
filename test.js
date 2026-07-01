@@ -63,6 +63,10 @@ fs.writeFileSync(fCrlf, crlf);
 fs.writeFileSync(fNested, multiline);
 fs.writeFileSync(fHtm, '<p>htm</p>');
 
+// A "binary" file whose bytes would match div.a if parsed — it must be skipped.
+const fBin = path.join(tmp, 'blob.html');
+fs.writeFileSync(fBin, Buffer.from('<div class="a">x</div>\x00\x01\x02\x03binary', 'binary'));
+
 // Isolated tree for --ignore tests (selector p.t doesn't occur in the fixtures
 // above, so these files never affect the other recursive tests).
 const igRoot = path.join(tmp, 'igtest');
@@ -635,6 +639,16 @@ check('-s suppresses the error for a missing file', () => {
   assert.ok(without.stderr.length > 0, 'expected an error without -s');
   const withS = spawnSync('node', [CLI, 'div.a', '-s', missing], { encoding: 'utf8' });
   assert.strictEqual(withS.stderr, '', withS.stderr);
+});
+
+// --- binary file skipping ----------------------------------------------------
+check('binary files are skipped (no match) with a note, suppressed by -s', () => {
+  const r = spawnSync('node', [CLI, 'div.a', fBin], { encoding: 'utf8' });
+  assert.strictEqual(r.stdout, '', `expected no match output, got ${JSON.stringify(r.stdout)}`);
+  assert.strictEqual(r.status, 1, 'a skipped binary file means no match (exit 1)');
+  assert.ok(/binary file \(skipped\)/.test(r.stderr), r.stderr);
+  const s = spawnSync('node', [CLI, 'div.a', '-s', fBin], { encoding: 'utf8' });
+  assert.strictEqual(s.stderr, '', s.stderr);
 });
 
 // --- option parsing ergonomics ----------------------------------------------

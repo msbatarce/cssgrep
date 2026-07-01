@@ -677,6 +677,23 @@ function readStdin() {
   return fs.readFileSync(0, 'utf8');
 }
 
+// Heuristic binary-file detector (grep/git style). A NUL byte in the first 8 KB
+// is a decisive binary signal; failing that, a high ratio of non-text control
+// bytes flags binary content that happens to lack NULs. HTML is text, so binary
+// files are never worth parsing and are skipped. (stat() can't tell us this —
+// only the bytes can.)
+const BINARY_SNIFF_BYTES = 8192;
+function looksBinary(buf) {
+  const n = Math.min(buf.length, BINARY_SNIFF_BYTES);
+  let suspicious = 0;
+  for (let i = 0; i < n; i++) {
+    const b = buf[i];
+    if (b === 0) return true;                       // NUL: definitely binary
+    if (b < 9 || (b > 13 && b < 32)) suspicious++;  // control char (not \t\n\v\f\r)
+  }
+  return n > 0 && suspicious / n > 0.3;
+}
+
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   resolveSelectorAndPaths(opts);
@@ -717,14 +734,20 @@ function main() {
     } else {
       for (const f of files) {
         if (room() <= 0) break;               // -M: global budget exhausted
-        let src;
+        let buf;
         try {
-          src = fs.readFileSync(f, 'utf8');
+          buf = fs.readFileSync(f);           // Buffer: sniff before decoding
         } catch (e) {
           if (!opts.noMessages) process.stderr.write(`cssgrep: ${f}: ${e.code || e.message}\n`);
           continue;
         }
-        total += searchSource(src, f, showLabel, opts, out, room());
+        if (looksBinary(buf)) {
+          if (!opts.noMessages && !opts.quiet) {
+            process.stderr.write(`cssgrep: ${f}: binary file (skipped)\n`);
+          }
+          continue;
+        }
+        total += searchSource(buf.toString('utf8'), f, showLabel, opts, out, room());
         if (opts.quiet && total > 0) break;   // -q: first match decides the status
       }
     }
