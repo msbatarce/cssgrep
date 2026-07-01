@@ -41,6 +41,8 @@ locator appears only with `-n`:
 |------|-------------|
 | `-r`, `--recursive` | Recurse into directory arguments (defaults to `.` if none given). |
 | `--ext <list>` | Extensions to scan with `-r` (default `html,htm`). Value attaches with `=`: `--ext htm` or `--ext=htm`. |
+| `-i`, `--ignore <glob>` | Skip files/dirs matching `<glob>` while recursing (repeatable). `node_modules`, `*.min.html`, `build/` (dir-only), or path globs like `src/vendor/**`. |
+| `--ignore-file <path>` | Load ignore globs from a file, one per line (`#` comments and blank lines ignored) — like a `.gitignore`. |
 | `-n`, `--line-number` | Prefix each match with its `line:col` locator. Mutually exclusive with `-c` and `-p`. |
 | `-p`, `--print` | Pretty-print the matched node's HTML, re-indented from scratch (works on minified input). No `line:col` locator is shown. |
 | `--attr <name>` | Print the value of attribute `<name>` for each match (nodes without it are skipped). Honors `-n` and `-w`. |
@@ -92,6 +94,10 @@ cssgrep 'img' -l -r .                      # files that contain an <img>
 
 # structural context — show the container the match lives in
 cssgrep '.price' -p --parent 2 page.html  # pretty-print each price's grandparent
+
+# ignore noise while recursing
+cssgrep 'script' -r . -i node_modules -i '*.min.html'
+cssgrep 'a' -r . --ignore-file .gitignore
 ```
 
 ### Structural context (`--parent`)

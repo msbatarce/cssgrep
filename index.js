@@ -24,6 +24,8 @@ Output (one line per match):
 Options:
   -r, --recursive        Recurse into directory arguments.
       --ext <list>       Comma-separated extensions for -r (default: html,htm).
+  -i, --ignore <glob>    Skip files/dirs matching <glob> when recursing (repeatable).
+      --ignore-file <path>   Read ignore globs from <path> (one per line, # comments).
   -n, --line-number      Prefix each match with its line:col (excludes -c, -p).
   -p, --print            Pretty-print the matched node's HTML above its location.
       --attr <name>      Print the value of attribute <name> (skips nodes without it).
@@ -91,6 +93,7 @@ function parseArgs(argv) {
     parent: 0,
     before: 0,
     after: 0,
+    ignore: [],
     color: 'auto',
   };
   const setExts = v => {
@@ -109,9 +112,17 @@ function parseArgs(argv) {
   const setAfter = v => { opts.after = boundedInt(v, '--after-context', 0); };
   const setBefore = v => { opts.before = boundedInt(v, '--before-context', 0); };
   const setContext = v => { opts.after = opts.before = boundedInt(v, '--context', 0); };
+  const addIgnore = v => { const c = compileIgnore(v); if (c) opts.ignore.push(c); };
+  const addIgnoreFile = v => {
+    let content;
+    try { content = fs.readFileSync(v, 'utf8'); }
+    catch (e) { fail(`cannot read ignore file: ${v}`); }
+    for (const line of content.split('\n')) { const c = compileIgnore(line); if (c) opts.ignore.push(c); }
+  };
   // Short flags that take a value (rest of the cluster, or the next argument).
   const shortValueFlags = {
     w: setMaxWidth, m: setMaxCount, M: setMaxTotal, A: setAfter, B: setBefore, C: setContext,
+    i: addIgnore,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -134,6 +145,8 @@ function parseArgs(argv) {
         case '--quiet': case '--silent': opts.quiet = true; break;
         case '--null': opts.nul = true; break;
         case '--ext': setExts(value()); break;
+        case '--ignore': addIgnore(value()); break;
+        case '--ignore-file': addIgnoreFile(value()); break;
         case '--max-width': setMaxWidth(value()); break;
         case '--max-count': setMaxCount(value()); break;
         case '--max-total': setMaxTotal(value()); break;
@@ -571,7 +584,53 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
   return limited.length;
 }
 
-function* walk(dir, exts) {
+// Translate a glob to a regex body. `*` matches within a path segment, `**`
+// across segments, `?` a single non-slash char; everything else is literal.
+function globToRegex(glob) {
+  let re = '';
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === '*') {
+      if (glob[i + 1] === '*') {            // **  (crosses /)
+        re += '.*';
+        i++;
+        if (glob[i + 1] === '/') i++;       // consume the slash in **/
+      } else {
+        re += '[^/]*';
+      }
+    } else if (c === '?') {
+      re += '[^/]';
+    } else if (/[.+^${}()|[\]\\]/.test(c)) {
+      re += '\\' + c;
+    } else {
+      re += c;
+    }
+  }
+  return re;
+}
+
+// Compile one ignore pattern (gitignore-flavored). A trailing `/` makes it
+// match directories only; a pattern containing `/` matches against the path
+// (anchored at a segment boundary), otherwise against the basename.
+function compileIgnore(pattern) {
+  const p = pattern.trim().replace(/\/$/, '');
+  if (!p || pattern.trim().startsWith('#')) return null;  // blank / comment line
+  const dirOnly = /\/$/.test(pattern.trim());
+  const hasSlash = p.includes('/');
+  const body = globToRegex(p);
+  const re = hasSlash ? new RegExp('(^|/)' + body + '$') : new RegExp('^' + body + '$');
+  return { re, dirOnly, hasSlash };
+}
+
+function isIgnored(name, full, isDir, matchers) {
+  for (const m of matchers) {
+    if (m.dirOnly && !isDir) continue;
+    if (m.re.test(m.hasSlash ? full : name)) return true;
+  }
+  return false;
+}
+
+function* walk(dir, opts) {
   let entries;
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -581,11 +640,13 @@ function* walk(dir, exts) {
   }
   for (const e of entries) {
     const full = path.join(dir, e.name);
-    if (e.isDirectory()) {
-      yield* walk(full, exts);
+    const isDir = e.isDirectory();
+    if (opts.ignore.length && isIgnored(e.name, full, isDir, opts.ignore)) continue;
+    if (isDir) {
+      yield* walk(full, opts);
     } else if (e.isFile()) {
       const ext = path.extname(e.name).slice(1).toLowerCase();
-      if (exts.includes(ext)) yield full;
+      if (opts.exts.includes(ext)) yield full;
     }
   }
 }
@@ -607,7 +668,7 @@ function main() {
     for (const p of targets) {
       const st = fs.statSync(p, { throwIfNoEntry: false });
       if (!st) { process.stderr.write(`cssgrep: ${p}: no such file or directory\n`); continue; }
-      if (st.isDirectory()) files.push(...walk(p, opts.exts));
+      if (st.isDirectory()) files.push(...walk(p, opts));
       else files.push(p);
     }
   } else if (opts.paths.length > 0) {

@@ -63,6 +63,18 @@ fs.writeFileSync(fCrlf, crlf);
 fs.writeFileSync(fNested, multiline);
 fs.writeFileSync(fHtm, '<p>htm</p>');
 
+// Isolated tree for --ignore tests (selector p.t doesn't occur in the fixtures
+// above, so these files never affect the other recursive tests).
+const igRoot = path.join(tmp, 'igtest');
+fs.mkdirSync(igRoot);
+fs.mkdirSync(path.join(igRoot, 'node_modules'));
+const igKeep = path.join(igRoot, 'keep.html');
+const igMin = path.join(igRoot, 'skip.min.html');
+const igDep = path.join(igRoot, 'node_modules', 'dep.html');
+fs.writeFileSync(igKeep, '<p class="t">keep</p>');
+fs.writeFileSync(igMin, '<p class="t">min</p>');
+fs.writeFileSync(igDep, '<p class="t">dep</p>');
+
 // --- tests ------------------------------------------------------------------
 check('stdin: default prints just the matched line, no locator', () => {
   const { stdout, status } = run(['div.a'], { input: multiline });
@@ -140,6 +152,49 @@ check('recursive: no path defaults to current directory', () => {
   // paths are relative to cwd (tmp); both files should be found
   assert.ok(/(^|\n)multi\.html:4:5/.test(stdout), stdout);
   assert.ok(/(^|\n)sub[\\/]nested\.html:4:5/.test(stdout), stdout);
+});
+
+// --- ignore patterns (-i / --ignore / --ignore-file) ------------------------
+check('-i excludes a matching directory while recursing', () => {
+  const { stdout } = run(['p.t', '-l', '-i', 'node_modules', '-r', igRoot]);
+  assert.ok(!stdout.includes('node_modules'), stdout);
+  assert.ok(stdout.includes(igKeep), stdout);
+});
+
+check('--ignore glob skips matching files (basename)', () => {
+  const { stdout } = run(['p.t', '-l', '--ignore', '*.min.html', '-r', igRoot]);
+  const lines = stdout.trimEnd().split('\n');
+  assert.ok(!lines.includes(igMin), stdout);
+  assert.ok(lines.includes(igKeep) && lines.includes(igDep), stdout);
+});
+
+check('multiple -i patterns accumulate', () => {
+  const { stdout } = run(['p.t', '-l', '-i', 'node_modules', '-i', '*.min.html', '-r', igRoot]);
+  assert.deepStrictEqual(stdout.trimEnd().split('\n'), [igKeep]);
+});
+
+check('-i trailing slash matches directories only', () => {
+  const { stdout } = run(['p.t', '-l', '-i', 'node_modules/', '-r', igRoot]);
+  assert.ok(!stdout.includes(igDep), stdout);
+  assert.ok(stdout.includes(igKeep), stdout);
+});
+
+check('-ri clusters; -i consumes the next arg', () => {
+  const { stdout } = run(['p.t', '-l', '-ri', 'node_modules', igRoot]);
+  assert.ok(!stdout.includes(igDep), stdout);
+});
+
+check('--ignore-file loads patterns from a file', () => {
+  const igf = path.join(tmp, 'myignore');
+  fs.writeFileSync(igf, '# a comment\nnode_modules\n\n*.min.html\n');
+  const { stdout } = run(['p.t', '-l', '--ignore-file', igf, '-r', igRoot]);
+  assert.deepStrictEqual(stdout.trimEnd().split('\n'), [igKeep]);
+});
+
+check('--ignore-file with a missing path: exit status 2', () => {
+  const { status } = run(['p.t', '--ignore-file', path.join(tmp, 'nope.ignore'), '-r', igRoot],
+    { expectStatus: 2 });
+  assert.strictEqual(status, 2);
 });
 
 check('--max-width truncates with ellipsis', () => {
