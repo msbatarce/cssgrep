@@ -36,7 +36,7 @@ Output, one line per match:
 |------|-------------|
 | `-r`, `--recursive` | Recurse into directory arguments (defaults to `.` if none given). |
 | `--ext <list>` | Extensions to scan with `-r` (default `html,htm`). |
-| `-p`, `--print` | Print the `line:col` locator, then the matched node's HTML beneath it (replaces the source-line text). |
+| `-p`, `--print` | Pretty-print the matched node's HTML, re-indented from scratch (works on minified input). No `line:col` locator is shown. |
 | `-w`, `--max-width <n>` | Truncate the shown line to `n` columns (adds `…`). |
 | `-c`, `--count` | Print only the match count (per file when relevant). |
 | `-h`, `--help` | Show help. |

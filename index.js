@@ -6,6 +6,7 @@ const path = require('path');
 const { parseDocument } = require('htmlparser2');
 const { selectAll } = require('css-select');
 const render = require('dom-serializer').default;
+const { html: beautify } = require('js-beautify');
 
 const USAGE = `cssgrep - search HTML by CSS selector, grep-style.
 
@@ -141,6 +142,17 @@ function truncate(text, maxWidth) {
   return text.slice(0, maxWidth - 1) + '…'; // …
 }
 
+// Re-indent a matched node's HTML from scratch (so minified input still comes
+// out readable). dom-serializer turns the parsed node back into a string;
+// js-beautify does the formatting.
+function prettyPrint(el) {
+  return beautify(render(el, { encodeEntities: false }), {
+    indent_size: 2,
+    wrap_line_length: 0, // never wrap long lines (e.g. long text/attributes)
+    preserve_newlines: false,
+  });
+}
+
 function searchSource(src, label, opts, out) {
   const dom = parseDocument(src, {
     withStartIndices: true,
@@ -153,21 +165,17 @@ function searchSource(src, label, opts, out) {
     }
     return matches.length;
   }
-  const starts = lineIndex(src);
+  const starts = opts.print ? null : lineIndex(src);
   for (const el of matches) {
+    if (opts.print) {
+      // -p shows the re-indented node only; no line:col locator.
+      out.push(prettyPrint(el), ''); // blank separator between matches
+      continue;
+    }
     const off = el.startIndex == null ? 0 : el.startIndex;
     const pos = offsetToPosition(starts, src, off);
     const prefix = label ? `${label}:` : '';
-    if (opts.print) {
-      // Location first so it reads as "this match is at L:C", then the node's
-      // HTML beneath it. The pretty-printed node replaces the source line text,
-      // which for minified (single-line) input would be the whole document.
-      out.push(`${prefix}${pos.line}:${pos.col}`);
-      out.push(render(el, { encodeEntities: false }));
-      out.push(''); // blank separator between matches
-    } else {
-      out.push(`${prefix}${pos.line}:${pos.col} ${truncate(pos.text, opts.maxWidth)}`);
-    }
+    out.push(`${prefix}${pos.line}:${pos.col} ${truncate(pos.text, opts.maxWidth)}`);
   }
   return matches.length;
 }

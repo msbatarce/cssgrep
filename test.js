@@ -132,11 +132,27 @@ check('--count reports number of matches', () => {
   assert.strictEqual(stdout.trim(), '2');
 });
 
-check('--print: location first, then serialized node (no full-line dump)', () => {
+check('--print: no line:col locator, lone text child stays inline', () => {
   const { stdout } = run(['p#x', '-p'], { input: multiline });
   const lines = stdout.trimEnd().split('\n');
-  assert.strictEqual(lines[0], '5:5');
-  assert.strictEqual(lines[1], '<p id="x">two</p>');
+  assert.strictEqual(lines[0], '<p id="x">two</p>');
+  assert.ok(!/^\d+:\d+/.test(stdout), 'should not print a line:col locator');
+});
+
+check('--print: re-indents minified input', () => {
+  const { stdout } = run(['div', '-p'], { input: '<div><h1>Hi</h1><p>Yo</p></div>' });
+  assert.strictEqual(stdout.trimEnd(), [
+    '<div>',
+    '  <h1>Hi</h1>',
+    '  <p>Yo</p>',
+    '</div>',
+  ].join('\n'));
+});
+
+check('--print: preserves attributes, minimizes boolean attrs, no void close tag', () => {
+  // js-beautify keeps short inline content (<input> is inline) on one line.
+  const { stdout } = run(['form', '-p'], { input: '<form action="/x"><input required></form>' });
+  assert.strictEqual(stdout.trimEnd(), '<form action="/x"><input required></form>');
 });
 
 check('no match: exit status 1, no output', () => {
