@@ -26,6 +26,8 @@ Options:
       --ext <list>       Comma-separated extensions for -r (default: html,htm).
   -n, --line-number      Prefix each match with its line:col (excludes -c, -p).
   -p, --print            Pretty-print the matched node's HTML above its location.
+      --attr <name>      Print the value of attribute <name> (skips nodes without it).
+      --text             Print the matched node's text content (whitespace collapsed).
   -w, --max-width <n>    Truncate the shown line to <n> columns (ellipsis added).
   -m, --max-count <n>    Stop after <n> matches per file.
   -c, --count            Print only a count of matches (per file when relevant).
@@ -74,6 +76,8 @@ function parseArgs(argv) {
     filesWithMatches: false,
     filesWithoutMatch: false,
     quiet: false,
+    attr: null,
+    text: false,
     color: 'auto',
   };
   const setExts = v => {
@@ -110,6 +114,8 @@ function parseArgs(argv) {
         case '--ext': setExts(value()); break;
         case '--max-width': setMaxWidth(value()); break;
         case '--max-count': setMaxCount(value()); break;
+        case '--attr': opts.attr = value(); break;
+        case '--text': opts.text = true; break;
         case '--color': case '--colour': opts.color = inline != null ? inline : 'always'; break;
         default: fail(`unknown option: ${name}`);
       }
@@ -149,6 +155,9 @@ function parseArgs(argv) {
   const aggregates = [opts.count, opts.filesWithMatches, opts.filesWithoutMatch, opts.quiet]
     .filter(Boolean).length;
   if (aggregates > 1) fail('only one of -c, -l, -L, -q may be given');
+  // Per-match print modes choose what is printed for each match; only one.
+  const printModes = [opts.print, opts.attr != null, opts.text].filter(Boolean).length;
+  if (printModes > 1) fail('only one of -p, --attr, --text may be given');
   if (opts.lineNumber && opts.count) fail('-n cannot be combined with -c');
   if (opts.lineNumber && opts.print) fail('-n cannot be combined with -p');
   if (!['auto', 'always', 'never'].includes(opts.color)) {
@@ -244,6 +253,18 @@ function renderText(pos, off, nodeEnd, opts) {
   return vis.slice(0, s) + paint(COLORS.match, vis.slice(s, e)) + vis.slice(e);
 }
 
+// Concatenate the text of a node and all its descendants (dependency-free,
+// rather than pulling in domutils). Used by --text.
+function textOf(node) {
+  if (node.type === 'text') return node.data || '';
+  if (!node.children) return '';
+  let s = '';
+  for (const child of node.children) s += textOf(child);
+  return s;
+}
+
+const collapseWs = s => s.replace(/\s+/g, ' ').trim();
+
 // Re-indent a matched node's HTML from scratch (so minified input still comes
 // out readable). dom-serializer turns the parsed node back into a string;
 // js-beautify does the formatting.
@@ -288,12 +309,24 @@ function searchSource(src, name, showLabel, opts, out) {
     }
     const off = el.startIndex == null ? 0 : el.startIndex;
     const pos = offsetToPosition(starts, src, off);
-    const nodeEnd = (el.endIndex == null ? off : el.endIndex) + 1; // exclusive
-    const text = renderText(pos, off, nodeEnd, opts);
+    const c = opts.colorOn ? paint : (_, s) => s;
+
+    // Choose the content printed for this match. --attr/--text replace the
+    // source line with the extracted value (whole value highlighted as the
+    // match); both honor -w truncation. Nodes lacking the attribute are skipped.
+    let text;
+    if (opts.attr != null) {
+      if (!el.attribs || !(opts.attr in el.attribs)) continue;
+      text = c(COLORS.match, truncate(el.attribs[opts.attr], opts.maxWidth));
+    } else if (opts.text) {
+      text = c(COLORS.match, truncate(collapseWs(textOf(el)), opts.maxWidth));
+    } else {
+      const nodeEnd = (el.endIndex == null ? off : el.endIndex) + 1; // exclusive
+      text = renderText(pos, off, nodeEnd, opts);
+    }
     // grep-style: a `file:` prefix appears with multiple files; the line:col
     // locator only with -n. The locator is separated from the text by a space
     // so the output stays :grep-compatible (grepformat %f:%l:%c %m).
-    const c = opts.colorOn ? paint : (_, s) => s;
     const sep = c(COLORS.sep, ':');
     let prefix = '';
     if (label) prefix += c(COLORS.file, label) + sep;

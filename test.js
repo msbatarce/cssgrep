@@ -241,6 +241,44 @@ check('clustered aggregates (-lq): exit status 2', () => {
   assert.strictEqual(status, 2);
 });
 
+// --- extraction (--attr / --text) -------------------------------------------
+const links = '<a href="/one">1</a>\n<a>no href</a>\n<a href="/two">2</a>\n';
+
+check('--attr prints attribute values, skipping nodes without it', () => {
+  const { stdout } = run(['a', '--attr', 'href'], { input: links });
+  assert.strictEqual(stdout.trimEnd(), ['/one', '/two'].join('\n'));
+});
+
+check('--attr=href inline value form', () => {
+  const { stdout } = run(['a', '--attr=href'], { input: links });
+  assert.strictEqual(stdout.trimEnd(), ['/one', '/two'].join('\n'));
+});
+
+check('--attr honors -n locator', () => {
+  const { stdout } = run(['a', '--attr', 'href', '-n'], { input: links });
+  assert.strictEqual(stdout.trimEnd().split('\n')[0], '1:1 /one');
+});
+
+check('--text prints collapsed text content', () => {
+  const { stdout } = run(['p', '--text'], { input: '<p>  hello\n   world  </p>' });
+  assert.strictEqual(stdout.trimEnd(), 'hello world');
+});
+
+check('--text on nested markup concatenates descendants', () => {
+  const { stdout } = run(['p', '--text'], { input: '<p>a <b>bold</b> c</p>' });
+  assert.strictEqual(stdout.trimEnd(), 'a bold c');
+});
+
+check('-p with --attr: exit status 2 (one print mode only)', () => {
+  const { status } = run(['a', '-p', '--attr', 'href'], { input: links, expectStatus: 2 });
+  assert.strictEqual(status, 2);
+});
+
+check('--attr with --text: exit status 2', () => {
+  const { status } = run(['a', '--attr', 'href', '--text'], { input: links, expectStatus: 2 });
+  assert.strictEqual(status, 2);
+});
+
 check('--print: no line:col locator, lone text child stays inline', () => {
   const { stdout } = run(['p#x', '-p'], { input: multiline });
   const lines = stdout.trimEnd().split('\n');

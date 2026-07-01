@@ -43,6 +43,8 @@ locator appears only with `-n`:
 | `--ext <list>` | Extensions to scan with `-r` (default `html,htm`). Value attaches with `=`: `--ext htm` or `--ext=htm`. |
 | `-n`, `--line-number` | Prefix each match with its `line:col` locator. Mutually exclusive with `-c` and `-p`. |
 | `-p`, `--print` | Pretty-print the matched node's HTML, re-indented from scratch (works on minified input). No `line:col` locator is shown. |
+| `--attr <name>` | Print the value of attribute `<name>` for each match (nodes without it are skipped). Honors `-n` and `-w`. |
+| `--text` | Print the matched node's text content, whitespace collapsed. Honors `-n` and `-w`. |
 | `-w`, `--max-width <n>` | Truncate the shown line to `n` columns (adds `…`). Value attaches or follows: `-w100`, `-w 100`, `--max-width=100`. |
 | `-m`, `--max-count <n>` | Stop after `n` matches per file (caps `-c` too). |
 | `-c`, `--count` | Print only the match count (per file when relevant). |
@@ -74,6 +76,11 @@ cssgrep 'a[href^="https"]' index.html
 cssgrep 'div.card > h2' -r src/ -w 100
 cssgrep 'form input[required]' templates/*.html -c
 curl -s https://example.com | cssgrep 'p a'
+
+# extraction — print attribute values or text instead of source lines
+cssgrep 'a' --attr href index.html        # every link target
+cssgrep 'h1, h2' --text -r src/           # all heading text
+cssgrep 'img' -l -r .                      # files that contain an <img>
 ```
 
 ## Vim / Neovim integration
