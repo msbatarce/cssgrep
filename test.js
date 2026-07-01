@@ -388,6 +388,17 @@ check('--parent -p highlights the matched node inside the container', () => {
   assert.ok(!stdout.includes('<!--'), 'sentinels stripped');
 });
 
+check('--parent -p produces no blank line when source has surrounding whitespace', () => {
+  // Pre-formatted input puts the matched node after a whitespace text node, so
+  // beautify parks the marker on its own line; the code must fold, not blank.
+  const html = '<div>\n  <h2>T</h2>\n  <p class="x">hit</p>\n  <span>z</span>\n</div>\n';
+  const { stdout } = run(['.x', '-p', '--parent', '1', '--color=always'], { input: html });
+  // no line consisting solely of indentation + an ANSI code
+  const blank = stdout.split('\n').some(l => /^[ \t]*\x1b\[[0-9;]*m[ \t]*$/.test(l));
+  assert.ok(!blank, JSON.stringify(stdout));
+  assert.ok(stdout.includes('\x1b[1;31m<p class="x">hit</p>\x1b[0m'), stdout);
+});
+
 check('--parent -p without color emits no escapes (and no sentinels)', () => {
   const { stdout } = run(['.x', '-p', '--parent', '1', '--color=never'],
     { input: '<article><p class="x">b</p></article>' });

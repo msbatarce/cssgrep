@@ -381,9 +381,38 @@ function prettyPrint(el, origins, opts) {
     }
   }
   if (!highlight) return html;
-  return html
-    .replace(new RegExp(`<!--\\s*${HL_START}\\s*-->`, 'g'), `\x1b[${COLORS.match}m`)
-    .replace(new RegExp(`<!--\\s*${HL_END}\\s*-->`, 'g'), '\x1b[0m');
+  const startCode = `\x1b[${COLORS.match}m`;
+  const resetCode = '\x1b[0m';
+  html = html
+    .replace(new RegExp(`<!--\\s*${HL_START}\\s*-->`, 'g'), startCode)
+    .replace(new RegExp(`<!--\\s*${HL_END}\\s*-->`, 'g'), resetCode);
+  return foldStandaloneCodes(html, startCode, resetCode);
+}
+
+// beautify sometimes parks a marker comment on its own line (e.g. when the
+// matched node followed source whitespace), leaving a line of just indent + a
+// zero-width ANSI code — a spurious blank line. Fold such a code onto the
+// adjacent content line: a start code onto the next line, a reset onto the
+// previous one.
+function foldStandaloneCodes(html, startCode, resetCode) {
+  const lines = html.split('\n');
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^([ \t]*)(\x1b\[[0-9;]*m)[ \t]*$/);
+    if (m) {
+      const code = m[2];
+      if (code === startCode && i + 1 < lines.length) {
+        lines[i + 1] = lines[i + 1].replace(/^[ \t]*/, ws => ws + startCode);
+        continue; // drop the standalone line
+      }
+      if (code === resetCode && out.length) {
+        out[out.length - 1] += resetCode;
+        continue;
+      }
+    }
+    out.push(lines[i]);
+  }
+  return out.join('\n');
 }
 
 // -A/-B/-C: emit each match line plus its surrounding context lines, grep-style.
