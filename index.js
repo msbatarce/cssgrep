@@ -64,45 +64,60 @@ function parseArgs(argv) {
     count: false,
     color: 'auto',
   };
+  const setExts = v => {
+    opts.exts = (v || '').split(',').map(s => s.trim().replace(/^\./, '')).filter(Boolean);
+  };
+  const setMaxWidth = v => {
+    const n = parseInt(v, 10);
+    if (!Number.isFinite(n) || n <= 0) fail('invalid --max-width value');
+    opts.maxWidth = n;
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    // --color[=WHEN]: handled before the switch so the optional `=WHEN` suffix
-    // (and the British spelling) match. A bare --color means "always", as grep.
-    if (a === '--color' || a === '--colour') { opts.color = 'always'; continue; }
-    if (a.startsWith('--color=') || a.startsWith('--colour=')) {
-      opts.color = a.slice(a.indexOf('=') + 1);
+
+    // Long options: --name or --name=value. A missing inline value is taken
+    // from the next argument (except --color, where a bare flag means "always").
+    if (a.startsWith('--') && a.length > 2) {
+      const eq = a.indexOf('=');
+      const name = eq === -1 ? a : a.slice(0, eq);
+      const inline = eq === -1 ? null : a.slice(eq + 1);
+      const value = () => (inline != null ? inline : argv[++i]);
+      switch (name) {
+        case '--help': process.stdout.write(USAGE + '\n'); process.exit(0); break;
+        case '--recursive': opts.recursive = true; break;
+        case '--line-number': opts.lineNumber = true; break;
+        case '--print': opts.print = true; break;
+        case '--count': opts.count = true; break;
+        case '--ext': setExts(value()); break;
+        case '--max-width': setMaxWidth(value()); break;
+        case '--color': case '--colour': opts.color = inline != null ? inline : 'always'; break;
+        default: fail(`unknown option: ${name}`);
+      }
       continue;
     }
-    switch (a) {
-      case '-h': case '--help':
-        process.stdout.write(USAGE + '\n');
-        process.exit(0);
-        break;
-      case '-r': case '--recursive':
-        opts.recursive = true;
-        break;
-      case '-n': case '--line-number':
-        opts.lineNumber = true;
-        break;
-      case '-p': case '--print':
-        opts.print = true;
-        break;
-      case '-c': case '--count':
-        opts.count = true;
-        break;
-      case '--ext':
-        opts.exts = (argv[++i] || '').split(',').map(s => s.trim().replace(/^\./, '')).filter(Boolean);
-        break;
-      case '-w': case '--max-width': {
-        const n = parseInt(argv[++i], 10);
-        if (!Number.isFinite(n) || n <= 0) fail(`invalid --max-width value`);
-        opts.maxWidth = n;
-        break;
+
+    // Short options, getopt-style: flags cluster (`-rn`) and a value-taking
+    // option consumes the rest of the cluster (`-w100`) or the next argument
+    // (`-w 100`), which means it must come last in a cluster (`-rnw100`).
+    if (a.startsWith('-') && a !== '-') {
+      for (let j = 1; j < a.length; j++) {
+        const ch = a[j];
+        if (ch === 'h') { process.stdout.write(USAGE + '\n'); process.exit(0); }
+        else if (ch === 'r') opts.recursive = true;
+        else if (ch === 'n') opts.lineNumber = true;
+        else if (ch === 'p') opts.print = true;
+        else if (ch === 'c') opts.count = true;
+        else if (ch === 'w') {
+          const rest = a.slice(j + 1);          // attached value, if any
+          setMaxWidth(rest !== '' ? rest : argv[++i]);
+          break;                                // value swallowed the cluster tail
+        }
+        else fail(`unknown option: -${ch}`);
       }
-      default:
-        if (a.startsWith('-') && a !== '-') fail(`unknown option: ${a}`);
-        opts.positionals.push(a);
+      continue;
     }
+
+    opts.positionals.push(a);
   }
   if (opts.positionals.length === 0) fail('no selector given (try --help)');
   if (opts.lineNumber && opts.count) fail('-n cannot be combined with -c');

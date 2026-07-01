@@ -56,10 +56,12 @@ const fCrlf = path.join(tmp, 'crlf.html');
 const sub = path.join(tmp, 'sub');
 fs.mkdirSync(sub);
 const fNested = path.join(sub, 'nested.html');
+const fHtm = path.join(tmp, 'page.htm');
 fs.writeFileSync(fMulti, multiline);
 fs.writeFileSync(fMin, minified);
 fs.writeFileSync(fCrlf, crlf);
 fs.writeFileSync(fNested, multiline);
+fs.writeFileSync(fHtm, '<p>htm</p>');
 
 // --- tests ------------------------------------------------------------------
 check('stdin: default prints just the matched line, no locator', () => {
@@ -231,6 +233,60 @@ check('--color=always -p: pretty-print stays uncolored', () => {
 
 check('invalid --color value: exit status 2', () => {
   const { status } = run(['div.a', '--color=purple'], { input: multiline, expectStatus: 2 });
+  assert.strictEqual(status, 2);
+});
+
+// --- option parsing ergonomics ----------------------------------------------
+check('-w100 attached short value equals -w 100', () => {
+  const a = run(['span.hit', '-w', '12'], { input: minified }).stdout;
+  const b = run(['span.hit', '-w12'], { input: minified }).stdout;
+  assert.ok(a.includes('…'), a);
+  assert.strictEqual(b, a);
+});
+
+check('--max-width=12 long =value form', () => {
+  const { stdout } = run(['span.hit', '--max-width=12'], { input: minified });
+  assert.strictEqual(stdout.split('\n')[0].length, 12);
+});
+
+check('-rn clusters -r and -n', () => {
+  const stdout = execFileSync('node', [CLI, 'div.a', '-rn'], { cwd: tmp, encoding: 'utf8' });
+  assert.ok(/(^|\n)multi\.html:4:5 /.test(stdout), stdout);
+});
+
+check('-rnw15 clusters flags with a trailing attached value', () => {
+  const stdout = execFileSync('node', [CLI, 'div.a', '-rnw15'], { cwd: tmp, encoding: 'utf8' });
+  const line = stdout.split('\n').find(l => /multi\.html/.test(l));
+  assert.ok(/multi\.html:4:5 /.test(line), line);           // -n locator present
+  const shown = line.slice(line.indexOf(' ') + 1);
+  assert.strictEqual(shown.length, 15);                     // -w15 truncation applied
+});
+
+check('-rnw 15 takes the value from the next argument', () => {
+  const stdout = execFileSync('node', [CLI, 'div.a', '-rnw', '15'], { cwd: tmp, encoding: 'utf8' });
+  const line = stdout.split('\n').find(l => /multi\.html/.test(l));
+  assert.strictEqual(line.slice(line.indexOf(' ') + 1).length, 15);
+});
+
+check('--ext=htm (long =value) selects .htm under -r', () => {
+  // page.htm is the only .htm match, so it prints as a single file (no prefix).
+  const stdout = execFileSync('node', [CLI, 'p', '-rn', '--ext=htm'], { cwd: tmp, encoding: 'utf8' });
+  assert.strictEqual(stdout.trimEnd(), '1:1 <p>htm</p>');
+  assert.ok(!/multi\.html/.test(stdout), 'html files excluded by --ext=htm');
+});
+
+check('-nc cluster still trips -n/-c exclusivity: exit 2', () => {
+  const { status } = run(['div.a', '-nc'], { input: multiline, expectStatus: 2 });
+  assert.strictEqual(status, 2);
+});
+
+check('-w without a value: exit status 2', () => {
+  const { status } = run(['div.a', '-rw'], { input: multiline, expectStatus: 2 });
+  assert.strictEqual(status, 2);
+});
+
+check('unknown clustered short flag: exit status 2', () => {
+  const { status } = run(['div.a', '-rx'], { input: multiline, expectStatus: 2 });
   assert.strictEqual(status, 2);
 });
 

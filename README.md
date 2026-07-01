@@ -60,6 +60,11 @@ The selector and paths can appear in any order — `cssgrep -r src 'div.a'` and
 `cssgrep 'div.a' -r src` are equivalent. The selector is whichever argument
 doesn't name an existing file or directory.
 
+Short flags follow the usual getopt conventions: they cluster (`-rn` is `-r -n`),
+a value-taking flag accepts its argument attached or separate (`-w100` or
+`-w 100`), and a value-taking flag may end a cluster (`-rnw100`). Long options
+take their value with `=` or as the next word (`--max-width=100`, `--ext=htm`).
+
 ### Examples
 
 ```sh
