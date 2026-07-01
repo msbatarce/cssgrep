@@ -11,7 +11,8 @@
     "index.js",
     "README.md",
     "LICENSE",
-    "man/cssgrep.1"
+    "man/cssgrep.1",
+    "completions/"
   ],
   "engines": {
     "node": ">=20.19.0"

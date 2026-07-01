@@ -1,0 +1,35 @@
+#compdef cssgrep
+# zsh completion for cssgrep. Keep in sync with the USAGE string in index.js.
+# Install: place this file (named _cssgrep) in a directory on your $fpath, then
+# ensure `autoload -U compinit && compinit` runs in your ~/.zshrc.
+
+_cssgrep() {
+  _arguments -s -S \
+    '(-r --recursive)'{-r,--recursive}'[recurse into directory arguments]' \
+    '--ext[extensions to scan with -r]:extensions (comma-separated):' \
+    '*'{-i,--ignore}'[skip files/dirs matching glob while recursing]:glob:' \
+    '--ignore-file[read ignore globs from a file]:file:_files' \
+    '(-n --line-number)'{-n,--line-number}'[prefix each match with line:col]' \
+    '(-p --print)'{-p,--print}'[pretty-print the matched node HTML]' \
+    '--attr[print the value of an attribute]:attribute name:' \
+    '--text[print the matched node text content]' \
+    '--json[print one JSON object per match (NDJSON)]' \
+    '--parent[report the n-th ancestor of each match]:depth:' \
+    '(-w --max-width)'{-w,--max-width}'[truncate shown line to n columns]:columns:' \
+    '(-A --after-context)'{-A,--after-context}'[print n lines after each match]:lines:' \
+    '(-B --before-context)'{-B,--before-context}'[print n lines before each match]:lines:' \
+    '(-C --context)'{-C,--context}'[print n lines around each match]:lines:' \
+    '(-m --max-count)'{-m,--max-count}'[stop after n matches per file]:count:' \
+    '(-M --max-total)'{-M,--max-total}'[stop after n matches in total]:count:' \
+    '(-c --count)'{-c,--count}'[print only a count of matches]' \
+    '(-l --files-with-matches)'{-l,--files-with-matches}'[print only names of files with a match]' \
+    '(-L --files-without-match)'{-L,--files-without-match}'[print only names of files without a match]' \
+    '(-q --quiet)'{-q,--quiet}'[print nothing; exit on first match]' \
+    '(-0 --null)'{-0,--null}'[separate the file name with a NUL byte]' \
+    '--color=-[colorize output]::when:(auto always never)' \
+    '(-h --help)'{-h,--help}'[show help and exit]' \
+    '(-V --version)'{-V,--version}'[show version and exit]' \
+    '*:file:_files'
+}
+
+_cssgrep "$@"

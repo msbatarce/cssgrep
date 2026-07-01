@@ -137,6 +137,26 @@ For a single buffer's HTML:
 :cexpr system('cssgrep -n ' . shellescape(input('selector> ')) . ' ' . shellescape(expand('%')))
 ```
 
+## Shell completions
+
+Completions for every flag ship in [`completions/`](completions/). Install the
+one for your shell (a global install puts them under
+`"$(npm root -g)/cssgrep/completions/"`):
+
+```sh
+# bash — source it, or copy to your bash-completion completions dir as `cssgrep`
+source completions/cssgrep.bash
+
+# zsh — drop `_cssgrep` onto your $fpath, then run compinit
+cp completions/_cssgrep ~/.zsh/completions/   # a dir on your $fpath
+
+# fish
+cp completions/cssgrep.fish ~/.config/fish/completions/
+```
+
+(The completions are hand-maintained; keep them in step with `--help` if you add
+a flag.)
+
 ## How it works
 
 - [`htmlparser2`](https://github.com/fb55/htmlparser2) parses with
