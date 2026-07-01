@@ -1,0 +1,45 @@
+name: release
+
+# Build standalone binaries and cut a GitHub Release whenever a vX.Y.Z tag is
+# pushed. npm publishing is opt-in: it only runs if an NPM_TOKEN secret is set.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          registry-url: 'https://registry.npmjs.org'
+      - uses: oven-sh/setup-bun@v2
+      - run: npm ci
+      - run: npm test
+      # Bun cross-compiles every target from this one runner.
+      - name: Build standalone binaries
+        run: npm run build:binaries
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum cssgrep-* > SHA256SUMS.txt
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/cssgrep-*
+            dist/SHA256SUMS.txt
+          generate_release_notes: true
+      # Opt-in: set the NPM_TOKEN repository secret to publish to npm on tag.
+      - name: Publish to npm
+        if: ${{ env.NPM_TOKEN != '' }}
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
