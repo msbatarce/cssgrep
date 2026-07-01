@@ -1,5 +1,5 @@
 {
-  "name": "vim-css-selector",
+  "name": "cssgrep",
   "version": "1.0.0",
   "description": "Search HTML by CSS selector and print matches grep-style (file:line:col with -n).",
   "main": "index.js",
@@ -19,12 +19,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/matias/vim-css-selector.git"
+    "url": "git+https://github.com/msbatarce/cssgrep.git"
   },
   "bugs": {
-    "url": "https://github.com/matias/vim-css-selector/issues"
+    "url": "https://github.com/msbatarce/cssgrep/issues"
   },
-  "homepage": "https://github.com/matias/vim-css-selector#readme",
+  "homepage": "https://github.com/msbatarce/cssgrep#readme",
   "scripts": {
     "test": "node test.js",
     "build:linux-x64": "bun build ./index.js --compile --target=bun-linux-x64 --outfile dist/cssgrep-linux-x64",
