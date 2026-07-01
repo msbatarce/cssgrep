@@ -82,18 +82,18 @@ doesn't name an existing file or directory.
 ### Examples
 
 ```sh
-cssgrep 'a[href^="https"]' index.html
+cssgrep 'a[href^="https"]' testdata/links.html
 cssgrep 'div.card > h2' -r src/ -w 100
 cssgrep 'form input[required]' templates/*.html -c
 curl -s https://example.com | cssgrep 'p a'
 
 # extraction — print attribute values or text instead of source lines
-cssgrep 'a' --attr href index.html        # every link target
-cssgrep 'h1, h2' --text -r src/           # all heading text
-cssgrep 'img' -l -r .                      # files that contain an <img>
+cssgrep 'a' --attr href testdata/links.html   # every link target
+cssgrep 'h1, h2' --text -r src/               # all heading text
+cssgrep 'img' -l -r .                          # files that contain an <img>
 
 # structural context — show the container the match lives in
-cssgrep '.price' -p --parent 2 page.html  # pretty-print each price's grandparent
+cssgrep '.price' -p --parent 1 testdata/cards.html  # pretty-print each price's card
 
 # ignore noise while recursing
 cssgrep 'script' -r . -i node_modules -i '*.min.html'

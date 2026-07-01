@@ -122,10 +122,10 @@ Most involved; refactors the line-output path.
 
 ## Verification
 
-`npm test` after each phase, plus manual smoke tests on the bundled minified
-`index.html` and a formatted fixture:
+`npm test` after each phase, plus manual smoke tests on the sample pages in
+`testdata/` (see `testdata/README.md`):
 
-- `cssgrep 'a' --attr href index.html`
-- `cssgrep 'h1' -p --parent 1 index.html`
-- `cssgrep 'li' -C1 formatted.html`
-- `cssgrep 'a[href]' -l -r .` ; `cssgrep '.x' -q file.html; echo $?`
+- `cssgrep 'a' --attr href testdata/links.html`
+- `cssgrep '.price' -p --parent 1 testdata/cards.html`
+- `cssgrep '.more' -C1 testdata/blog.html`
+- `cssgrep 'a[href]' -l -r .` ; `cssgrep '.x' -q testdata/blog.html; echo $?`
