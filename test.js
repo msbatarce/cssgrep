@@ -162,6 +162,26 @@ check('--count reports number of matches', () => {
   assert.strictEqual(stdout.trim(), '2');
 });
 
+check('-m caps matches per file', () => {
+  const { stdout } = run(['div.a', '-m', '1'], { input: multiline });
+  assert.strictEqual(stdout.trimEnd().split('\n').length, 1);
+});
+
+check('-m1 attached value form', () => {
+  const { stdout } = run(['div.a', '-m1'], { input: multiline });
+  assert.strictEqual(stdout.trimEnd().split('\n').length, 1);
+});
+
+check('-m caps the -c count too', () => {
+  const { stdout } = run(['div.a', '-c', '-m', '1'], { input: multiline });
+  assert.strictEqual(stdout.trim(), '1');     // 2 matches, capped to 1
+});
+
+check('invalid --max-count value: exit status 2', () => {
+  const { status } = run(['div.a', '-m', '0'], { input: multiline, expectStatus: 2 });
+  assert.strictEqual(status, 2);
+});
+
 check('--print: no line:col locator, lone text child stays inline', () => {
   const { stdout } = run(['p#x', '-p'], { input: multiline });
   const lines = stdout.trimEnd().split('\n');

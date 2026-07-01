@@ -27,6 +27,7 @@ Options:
   -n, --line-number      Prefix each match with its line:col (excludes -c, -p).
   -p, --print            Pretty-print the matched node's HTML above its location.
   -w, --max-width <n>    Truncate the shown line to <n> columns (ellipsis added).
+  -m, --max-count <n>    Stop after <n> matches per file.
   -c, --count            Print only a count of matches (per file when relevant).
       --color[=<when>]   Colorize output: auto (default), always or never.
   -h, --help             Show this help.
@@ -65,17 +66,22 @@ function parseArgs(argv) {
     lineNumber: false,
     print: false,
     maxWidth: 0,
+    maxCount: 0,
     count: false,
     color: 'auto',
   };
   const setExts = v => {
     opts.exts = (v || '').split(',').map(s => s.trim().replace(/^\./, '')).filter(Boolean);
   };
-  const setMaxWidth = v => {
+  const positiveInt = (v, what) => {
     const n = parseInt(v, 10);
-    if (!Number.isFinite(n) || n <= 0) fail('invalid --max-width value');
-    opts.maxWidth = n;
+    if (!Number.isFinite(n) || n <= 0) fail(`invalid ${what} value`);
+    return n;
   };
+  const setMaxWidth = v => { opts.maxWidth = positiveInt(v, '--max-width'); };
+  const setMaxCount = v => { opts.maxCount = positiveInt(v, '--max-count'); };
+  // Short flags that take a value (rest of the cluster, or the next argument).
+  const shortValueFlags = { w: setMaxWidth, m: setMaxCount };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
 
@@ -94,6 +100,7 @@ function parseArgs(argv) {
         case '--count': opts.count = true; break;
         case '--ext': setExts(value()); break;
         case '--max-width': setMaxWidth(value()); break;
+        case '--max-count': setMaxCount(value()); break;
         case '--color': case '--colour': opts.color = inline != null ? inline : 'always'; break;
         default: fail(`unknown option: ${name}`);
       }
@@ -106,17 +113,19 @@ function parseArgs(argv) {
     if (a.startsWith('-') && a !== '-') {
       for (let j = 1; j < a.length; j++) {
         const ch = a[j];
-        if (ch === 'h') { process.stdout.write(USAGE + '\n'); process.exit(0); }
-        else if (ch === 'r') opts.recursive = true;
-        else if (ch === 'n') opts.lineNumber = true;
-        else if (ch === 'p') opts.print = true;
-        else if (ch === 'c') opts.count = true;
-        else if (ch === 'w') {
+        if (shortValueFlags[ch]) {
           const rest = a.slice(j + 1);          // attached value, if any
-          setMaxWidth(rest !== '' ? rest : argv[++i]);
+          shortValueFlags[ch](rest !== '' ? rest : argv[++i]);
           break;                                // value swallowed the cluster tail
         }
-        else fail(`unknown option: -${ch}`);
+        switch (ch) {
+          case 'h': process.stdout.write(USAGE + '\n'); process.exit(0); break;
+          case 'r': opts.recursive = true; break;
+          case 'n': opts.lineNumber = true; break;
+          case 'p': opts.print = true; break;
+          case 'c': opts.count = true; break;
+          default: fail(`unknown option: -${ch}`);
+        }
       }
       continue;
     }
@@ -236,14 +245,16 @@ function searchSource(src, label, opts, out) {
     withEndIndices: true,
   });
   const matches = selectAll(opts.selector, dom);
+  // -m/--max-count caps how many matches per source are reported (and counted).
+  const limited = opts.maxCount ? matches.slice(0, opts.maxCount) : matches;
   if (opts.count) {
-    if (matches.length) {
-      out.push(label ? `${label}:${matches.length}` : String(matches.length));
+    if (limited.length) {
+      out.push(label ? `${label}:${limited.length}` : String(limited.length));
     }
-    return matches.length;
+    return limited.length;
   }
   const starts = opts.print ? null : lineIndex(src);
-  for (const el of matches) {
+  for (const el of limited) {
     if (opts.print) {
       // -p shows the re-indented node only; no line:col locator.
       out.push(prettyPrint(el), ''); // blank separator between matches
@@ -265,7 +276,7 @@ function searchSource(src, label, opts, out) {
     }
     out.push(prefix + text);
   }
-  return matches.length;
+  return limited.length;
 }
 
 function* walk(dir, exts) {

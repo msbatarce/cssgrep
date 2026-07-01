@@ -44,6 +44,7 @@ locator appears only with `-n`:
 | `-n`, `--line-number` | Prefix each match with its `line:col` locator. Mutually exclusive with `-c` and `-p`. |
 | `-p`, `--print` | Pretty-print the matched node's HTML, re-indented from scratch (works on minified input). No `line:col` locator is shown. |
 | `-w`, `--max-width <n>` | Truncate the shown line to `n` columns (adds `…`). Value attaches or follows: `-w100`, `-w 100`, `--max-width=100`. |
+| `-m`, `--max-count <n>` | Stop after `n` matches per file (caps `-c` too). |
 | `-c`, `--count` | Print only the match count (per file when relevant). |
 | `--color[=<when>]` | Colorize output: `auto` (default — color only when stdout is a terminal), `always`, or `never`. A bare `--color` means `always`. |
 | `-h`, `--help` | Show help. |
