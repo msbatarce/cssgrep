@@ -17,7 +17,7 @@
     "vim",
     "cli"
   ],
-  "author": "",
+  "author": "matias",
   "license": "ISC",
   "dependencies": {
     "css-select": "^7.0.0",

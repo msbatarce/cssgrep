@@ -87,7 +87,7 @@ function parseArgs(argv) {
       const inline = eq === -1 ? null : a.slice(eq + 1);
       const value = () => (inline != null ? inline : argv[++i]);
       switch (name) {
-        case '--help': process.stdout.write(USAGE + '\n'); process.exit(0);
+        case '--help': process.stdout.write(USAGE + '\n'); process.exit(0); break;
         case '--recursive': opts.recursive = true; break;
         case '--line-number': opts.lineNumber = true; break;
         case '--print': opts.print = true; break;
