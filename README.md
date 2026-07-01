@@ -40,13 +40,16 @@ locator appears only with `-n`:
 | Flag | Description |
 |------|-------------|
 | `-r`, `--recursive` | Recurse into directory arguments (defaults to `.` if none given). |
-| `--ext <list>` | Extensions to scan with `-r` (default `html,htm`). |
+| `--ext <list>` | Extensions to scan with `-r` (default `html,htm`). Value attaches with `=`: `--ext htm` or `--ext=htm`. |
 | `-n`, `--line-number` | Prefix each match with its `line:col` locator. Mutually exclusive with `-c` and `-p`. |
 | `-p`, `--print` | Pretty-print the matched node's HTML, re-indented from scratch (works on minified input). No `line:col` locator is shown. |
-| `-w`, `--max-width <n>` | Truncate the shown line to `n` columns (adds `…`). |
+| `-w`, `--max-width <n>` | Truncate the shown line to `n` columns (adds `…`). Value attaches or follows: `-w100`, `-w 100`, `--max-width=100`. |
 | `-c`, `--count` | Print only the match count (per file when relevant). |
 | `--color[=<when>]` | Colorize output: `auto` (default — color only when stdout is a terminal), `always`, or `never`. A bare `--color` means `always`. |
 | `-h`, `--help` | Show help. |
+
+Boolean short flags can be combined into one token (`-rn` is `-r -n`), and a
+value-taking flag may close such a cluster (`-rnw100`).
 
 When coloring is on, the matched node is highlighted within its line (grep's
 bold-red); the `file:` prefix and `line:col` locator get their own colors
@@ -59,11 +62,6 @@ convention as `grep`.
 The selector and paths can appear in any order — `cssgrep -r src 'div.a'` and
 `cssgrep 'div.a' -r src` are equivalent. The selector is whichever argument
 doesn't name an existing file or directory.
-
-Short flags follow the usual getopt conventions: they cluster (`-rn` is `-r -n`),
-a value-taking flag accepts its argument attached or separate (`-w100` or
-`-w 100`), and a value-taking flag may end a cluster (`-rnw100`). Long options
-take their value with `=` or as the next word (`--max-width=100`, `--ext=htm`).
 
 ### Examples
 

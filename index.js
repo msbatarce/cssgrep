@@ -31,6 +31,10 @@ Options:
       --color[=<when>]   Colorize output: auto (default), always or never.
   -h, --help             Show this help.
 
+Short flags combine (-rn) and a value attaches to its flag (-w100) or follows it
+(-w 100); a value-taking flag may close a cluster (-rnw100). Long options take a
+value with = or as the next word (--max-width=100, --ext htm).
+
 Exit status: 0 if any match was found, 1 if none, 2 on error.`;
 
 function fail(msg) {
@@ -83,7 +87,7 @@ function parseArgs(argv) {
       const inline = eq === -1 ? null : a.slice(eq + 1);
       const value = () => (inline != null ? inline : argv[++i]);
       switch (name) {
-        case '--help': process.stdout.write(USAGE + '\n'); process.exit(0); break;
+        case '--help': process.stdout.write(USAGE + '\n'); process.exit(0);
         case '--recursive': opts.recursive = true; break;
         case '--line-number': opts.lineNumber = true; break;
         case '--print': opts.print = true; break;
