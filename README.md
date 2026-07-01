@@ -26,6 +26,22 @@ Check the installed version with `cssgrep --version`. A global install also
 puts a man page on your `MANPATH`, so `man cssgrep` works; from a clone, read it
 with `man ./man/cssgrep.1`.
 
+### Standalone binary (no Node required)
+
+Each release ships self-contained executables — download the one for your
+platform, `chmod +x`, and run it; no Node install needed. To build them yourself
+you need [Bun](https://bun.sh) (used only as a build tool — the project still
+runs on plain Node):
+
+```sh
+bun --version           # https://bun.sh
+npm run build:binaries  # writes dist/cssgrep-{linux,darwin}-{x64,arm64} and -windows-x64.exe
+```
+
+Bun cross-compiles all targets from one machine, so this is what CI uses to
+produce release artifacts. `npm run build:linux-x64` (etc.) builds a single
+target.
+
 ## Usage
 
 ```sh
