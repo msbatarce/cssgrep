@@ -182,6 +182,31 @@ check('invalid --max-count value: exit status 2', () => {
   assert.strictEqual(status, 2);
 });
 
+check('-M caps matches in total across files', () => {
+  // fMulti and fNested each have 2 div.a matches (4 total); -M3 stops at 3.
+  const { stdout } = run(['div.a', '-M', '3', '-n', fMulti, fNested]);
+  assert.strictEqual(stdout.trimEnd().split('\n').length, 3);
+});
+
+check('-M3 attached form: second file is partially consumed', () => {
+  const { stdout } = run(['div.a', '-M3', fMulti, fNested]);
+  const lines = stdout.trimEnd().split('\n');
+  assert.strictEqual(lines.length, 3);
+  assert.strictEqual(lines.filter(l => l.startsWith(fMulti)).length, 2);
+  assert.strictEqual(lines.filter(l => l.startsWith(fNested)).length, 1);
+});
+
+check('-M combines with -m (smaller cap wins per file)', () => {
+  // -m1 caps each file to 1; -M3 allows 3 total → 2 files give 2 lines
+  const { stdout } = run(['div.a', '-m1', '-M3', '-n', fMulti, fNested]);
+  assert.strictEqual(stdout.trimEnd().split('\n').length, 2);
+});
+
+check('invalid --max-total value: exit status 2', () => {
+  const { status } = run(['div.a', '-M', '0'], { input: multiline, expectStatus: 2 });
+  assert.strictEqual(status, 2);
+});
+
 check('-l lists only files that match', () => {
   const { stdout } = run(['div.a', '-l', '-r', tmp]);
   const lines = stdout.trimEnd().split('\n');

@@ -35,6 +35,7 @@ Options:
   -B, --before-context <n>   Print <n> source lines before each match.
   -C, --context <n>          Print <n> source lines before and after each match.
   -m, --max-count <n>    Stop after <n> matches per file.
+  -M, --max-total <n>    Stop after <n> matches in total (across all files).
   -c, --count            Print only a count of matches (per file when relevant).
   -l, --files-with-matches   Print only the names of files that have a match.
   -L, --files-without-match  Print only the names of files with no match.
@@ -78,6 +79,7 @@ function parseArgs(argv) {
     print: false,
     maxWidth: 0,
     maxCount: 0,
+    maxTotal: 0,
     count: false,
     filesWithMatches: false,
     filesWithoutMatch: false,
@@ -102,12 +104,15 @@ function parseArgs(argv) {
   const positiveInt = (v, what) => boundedInt(v, what, 1);
   const setMaxWidth = v => { opts.maxWidth = positiveInt(v, '--max-width'); };
   const setMaxCount = v => { opts.maxCount = positiveInt(v, '--max-count'); };
+  const setMaxTotal = v => { opts.maxTotal = positiveInt(v, '--max-total'); };
   const setParent = v => { opts.parent = positiveInt(v, '--parent'); };
   const setAfter = v => { opts.after = boundedInt(v, '--after-context', 0); };
   const setBefore = v => { opts.before = boundedInt(v, '--before-context', 0); };
   const setContext = v => { opts.after = opts.before = boundedInt(v, '--context', 0); };
   // Short flags that take a value (rest of the cluster, or the next argument).
-  const shortValueFlags = { w: setMaxWidth, m: setMaxCount, A: setAfter, B: setBefore, C: setContext };
+  const shortValueFlags = {
+    w: setMaxWidth, m: setMaxCount, M: setMaxTotal, A: setAfter, B: setBefore, C: setContext,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
 
@@ -131,6 +136,7 @@ function parseArgs(argv) {
         case '--ext': setExts(value()); break;
         case '--max-width': setMaxWidth(value()); break;
         case '--max-count': setMaxCount(value()); break;
+        case '--max-total': setMaxTotal(value()); break;
         case '--attr': opts.attr = value(); break;
         case '--text': opts.text = true; break;
         case '--json': opts.json = true; break;
@@ -435,7 +441,7 @@ function emitContext(src, starts, name, showLabel, targets, opts, out) {
 // `name` is the source's display name (file path, or "(standard input)"); it is
 // used by the aggregate modes (-l/-L/-c). `showLabel` decides whether per-match
 // lines carry a `file:` prefix (only when more than one file is searched).
-function searchSource(src, name, showLabel, opts, out) {
+function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
   const dom = parseDocument(src, {
     withStartIndices: true,
     withEndIndices: true,
@@ -448,8 +454,10 @@ function searchSource(src, name, showLabel, opts, out) {
   if (opts.filesWithoutMatch) { if (!found) out.push(name); return found; }
 
   const label = showLabel ? name : null;
-  // -m/--max-count caps how many matches per source are reported (and counted).
-  const limited = opts.maxCount ? matches.slice(0, opts.maxCount) : matches;
+  // -m/--max-count caps matches per source; `limit` is the remaining global
+  // budget from -M/--max-total (Infinity when neither applies).
+  const cap = Math.min(opts.maxCount || Infinity, limit);
+  const limited = Number.isFinite(cap) ? matches.slice(0, cap) : matches;
   if (opts.count) {
     if (limited.length) {
       const fileSep = opts.nul ? '\0' : ':';
@@ -585,11 +593,15 @@ function main() {
   const out = [];
   let total = 0;
 
+  // -M/--max-total: remaining matches allowed across all files (Infinity = off).
+  const room = () => (opts.maxTotal ? Math.max(0, opts.maxTotal - total) : Infinity);
+
   try {
     if (useStdin) {
-      total += searchSource(readStdin(), '(standard input)', false, opts, out);
+      total += searchSource(readStdin(), '(standard input)', false, opts, out, room());
     } else {
       for (const f of files) {
+        if (room() <= 0) break;               // -M: global budget exhausted
         let src;
         try {
           src = fs.readFileSync(f, 'utf8');
@@ -597,7 +609,7 @@ function main() {
           process.stderr.write(`cssgrep: ${f}: ${e.code || e.message}\n`);
           continue;
         }
-        total += searchSource(src, f, showLabel, opts, out);
+        total += searchSource(src, f, showLabel, opts, out, room());
         if (opts.quiet && total > 0) break;   // -q: first match decides the status
       }
     }

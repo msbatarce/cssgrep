@@ -52,6 +52,7 @@ locator appears only with `-n`:
 | `-B`, `--before-context <n>` | Print `n` source lines before each match. |
 | `-C`, `--context <n>` | Print `n` source lines before and after each match. |
 | `-m`, `--max-count <n>` | Stop after `n` matches per file (caps `-c` too). |
+| `-M`, `--max-total <n>` | Stop after `n` matches in total across all files. |
 | `-c`, `--count` | Print only the match count (per file when relevant). |
 | `-l`, `--files-with-matches` | Print only the names of files that contain a match. |
 | `-L`, `--files-without-match` | Print only the names of files with no match. |
