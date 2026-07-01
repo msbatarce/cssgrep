@@ -279,6 +279,30 @@ check('--attr with --text: exit status 2', () => {
   assert.strictEqual(status, 2);
 });
 
+// --- --json ------------------------------------------------------------------
+check('--json emits one parseable record per match with expected fields', () => {
+  const { stdout } = run(['div.a', '--json'], { input: multiline });
+  const recs = stdout.trimEnd().split('\n').map(l => JSON.parse(l));
+  assert.strictEqual(recs.length, 2);
+  assert.deepStrictEqual(Object.keys(recs[0]).sort(), ['col', 'file', 'html', 'line', 'text']);
+  assert.strictEqual(recs[0].file, '(standard input)');
+  assert.strictEqual(recs[0].line, 4);
+  assert.strictEqual(recs[0].col, 5);
+  assert.strictEqual(recs[0].html, '<div class="a">one</div>');
+  assert.strictEqual(recs[0].text, 'one');
+});
+
+check('--json file field carries the path with multiple files', () => {
+  const { stdout } = run(['p#x', '--json', fMulti, fNested]);
+  const files = stdout.trimEnd().split('\n').map(l => JSON.parse(l).file);
+  assert.ok(files.includes(fMulti) && files.includes(fNested), stdout);
+});
+
+check('--json with -p: exit status 2', () => {
+  const { status } = run(['div.a', '--json', '-p'], { input: multiline, expectStatus: 2 });
+  assert.strictEqual(status, 2);
+});
+
 check('--print: no line:col locator, lone text child stays inline', () => {
   const { stdout } = run(['p#x', '-p'], { input: multiline });
   const lines = stdout.trimEnd().split('\n');

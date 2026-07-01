@@ -45,6 +45,7 @@ locator appears only with `-n`:
 | `-p`, `--print` | Pretty-print the matched node's HTML, re-indented from scratch (works on minified input). No `line:col` locator is shown. |
 | `--attr <name>` | Print the value of attribute `<name>` for each match (nodes without it are skipped). Honors `-n` and `-w`. |
 | `--text` | Print the matched node's text content, whitespace collapsed. Honors `-n` and `-w`. |
+| `--json` | Print one JSON object per match (NDJSON), with `file`, `line`, `col`, `html`, `text`. |
 | `-w`, `--max-width <n>` | Truncate the shown line to `n` columns (adds `…`). Value attaches or follows: `-w100`, `-w 100`, `--max-width=100`. |
 | `-m`, `--max-count <n>` | Stop after `n` matches per file (caps `-c` too). |
 | `-c`, `--count` | Print only the match count (per file when relevant). |

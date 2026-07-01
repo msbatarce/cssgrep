@@ -28,6 +28,7 @@ Options:
   -p, --print            Pretty-print the matched node's HTML above its location.
       --attr <name>      Print the value of attribute <name> (skips nodes without it).
       --text             Print the matched node's text content (whitespace collapsed).
+      --json             Print one JSON record per match (NDJSON: file,line,col,html,text).
   -w, --max-width <n>    Truncate the shown line to <n> columns (ellipsis added).
   -m, --max-count <n>    Stop after <n> matches per file.
   -c, --count            Print only a count of matches (per file when relevant).
@@ -78,6 +79,7 @@ function parseArgs(argv) {
     quiet: false,
     attr: null,
     text: false,
+    json: false,
     color: 'auto',
   };
   const setExts = v => {
@@ -116,6 +118,7 @@ function parseArgs(argv) {
         case '--max-count': setMaxCount(value()); break;
         case '--attr': opts.attr = value(); break;
         case '--text': opts.text = true; break;
+        case '--json': opts.json = true; break;
         case '--color': case '--colour': opts.color = inline != null ? inline : 'always'; break;
         default: fail(`unknown option: ${name}`);
       }
@@ -156,8 +159,8 @@ function parseArgs(argv) {
     .filter(Boolean).length;
   if (aggregates > 1) fail('only one of -c, -l, -L, -q may be given');
   // Per-match print modes choose what is printed for each match; only one.
-  const printModes = [opts.print, opts.attr != null, opts.text].filter(Boolean).length;
-  if (printModes > 1) fail('only one of -p, --attr, --text may be given');
+  const printModes = [opts.print, opts.attr != null, opts.text, opts.json].filter(Boolean).length;
+  if (printModes > 1) fail('only one of -p, --attr, --text, --json may be given');
   if (opts.lineNumber && opts.count) fail('-n cannot be combined with -c');
   if (opts.lineNumber && opts.print) fail('-n cannot be combined with -p');
   if (!['auto', 'always', 'never'].includes(opts.color)) {
@@ -301,6 +304,24 @@ function searchSource(src, name, showLabel, opts, out) {
     return limited.length;
   }
   const starts = opts.print ? null : lineIndex(src);
+  if (opts.json) {
+    // NDJSON: one self-contained record per match. `html` is the exact source
+    // slice; newlines are escaped by JSON.stringify, so each record stays on
+    // one line. Ignores --color and -n (line/col are always present).
+    for (const el of limited) {
+      const off = el.startIndex == null ? 0 : el.startIndex;
+      const pos = offsetToPosition(starts, src, off);
+      const nodeEnd = (el.endIndex == null ? off : el.endIndex) + 1;
+      out.push(JSON.stringify({
+        file: name,
+        line: pos.line,
+        col: pos.col,
+        html: src.slice(off, nodeEnd),
+        text: collapseWs(textOf(el)),
+      }));
+    }
+    return limited.length;
+  }
   for (const el of limited) {
     if (opts.print) {
       // -p shows the re-indented node only; no line:col locator.
