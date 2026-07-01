@@ -26,6 +26,8 @@ _cssgrep() {
     '(-L --files-without-match)'{-L,--files-without-match}'[print only names of files without a match]' \
     '(-q --quiet)'{-q,--quiet}'[print nothing; exit on first match]' \
     '(-0 --null)'{-0,--null}'[separate the file name with a NUL byte]' \
+    '(--no-filename)'{-H,--with-filename}'[always print the file name prefix]' \
+    '(-H --with-filename)--no-filename[never print the file name prefix]' \
     '--color=-[colorize output]::when:(auto always never)' \
     '(-h --help)'{-h,--help}'[show help and exit]' \
     '(-V --version)'{-V,--version}'[show version and exit]' \

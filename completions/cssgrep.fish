@@ -22,6 +22,8 @@ complete -c cssgrep -s l -l files-with-matches -d 'Print only names of files wit
 complete -c cssgrep -s L -l files-without-match -d 'Print only names of files without a match'
 complete -c cssgrep -s q -l quiet -d 'Print nothing; exit on first match'
 complete -c cssgrep -s 0 -l null -d 'Separate the file name with a NUL byte'
+complete -c cssgrep -s H -l with-filename -d 'Always print the file name prefix'
+complete -c cssgrep -l no-filename -d 'Never print the file name prefix'
 complete -c cssgrep -l color -x -a 'auto always never' -d 'Colorize output'
 complete -c cssgrep -s h -l help -d 'Show help and exit'
 complete -c cssgrep -s V -l version -d 'Show version and exit'

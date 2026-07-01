@@ -143,6 +143,12 @@ Print nothing; exit 0 on the first match, 1 if none.
 Separate the file name with a NUL byte (for
 .BR "xargs \-0" ).
 .TP
+.BR \-H ", " \-\-with\-filename
+Always print the file name prefix, even for a single file or standard input.
+.TP
+.B \-\-no\-filename
+Never print the file name prefix, even when searching multiple files.
+.TP
 .BR \-\-color [ =\fIwhen\fR ]
 Colorize output:
 .I auto

@@ -605,6 +605,29 @@ check('-V short flag matches --version', () => {
   assert.strictEqual(run(['-V']).stdout, run(['--version']).stdout);
 });
 
+// --- filename control (-H / --no-filename) ----------------------------------
+check('-H forces the file: prefix on a single file', () => {
+  const { stdout } = run(['div.a', '-H', fMulti]);
+  for (const line of stdout.split('\n').filter(Boolean)) {
+    assert.ok(line.startsWith(fMulti + ':'), line);
+  }
+});
+
+check('-H labels stdin as (standard input)', () => {
+  const { stdout } = run(['div.a', '-H'], { input: multiline });
+  assert.ok(stdout.split('\n')[0].startsWith('(standard input):'), stdout);
+});
+
+check('--no-filename suppresses the prefix across multiple files', () => {
+  const { stdout } = run(['div.a', '--no-filename', fMulti, fNested]);
+  assert.ok(!/multi\.html:|nested\.html:/.test(stdout), stdout);
+});
+
+check('-H with --no-filename: exit status 2', () => {
+  const { status } = run(['div.a', '-H', '--no-filename'], { input: multiline, expectStatus: 2 });
+  assert.strictEqual(status, 2);
+});
+
 // --- option parsing ergonomics ----------------------------------------------
 check('-w100 attached short value equals -w 100', () => {
   const a = run(['span.hit', '-w', '12'], { input: minified }).stdout;

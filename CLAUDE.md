@@ -59,8 +59,10 @@ run the selector, format matches.
   are rejected there.
 - **Keep it dependency-light.** Prefer a small local helper over a new
   dependency (and never rely on a transitive dep that isn't in `package.json`).
-- **Update docs with code.** Any new flag must update the `USAGE` string in
-  `index.js` and the options table in `README.md` in the same change.
+- **Update docs with code.** Any new flag must update, in the same change, all
+  four doc surfaces: the `USAGE` string in `index.js`, the options table in
+  `README.md`, the man page (`man/cssgrep.1`), and the three completion files
+  (`completions/cssgrep.bash`, `completions/_cssgrep`, `completions/cssgrep.fish`).
 
 ### Commits
 

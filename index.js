@@ -49,6 +49,8 @@ Options:
   -L, --files-without-match  Print only the names of files with no match.
   -q, --quiet            Print nothing; exit 0 on first match, 1 if none.
   -0, --null             Separate the file name with a NUL byte (for xargs -0).
+  -H, --with-filename    Always print the file name prefix (even for one file).
+      --no-filename      Never print the file name prefix (even for many files).
       --color[=<when>]   Colorize output: auto (default), always or never.
   -h, --help             Show this help.
   -V, --version          Show version and exit.
@@ -101,6 +103,8 @@ function parseArgs(argv) {
     before: 0,
     after: 0,
     ignore: [],
+    withFilename: false,
+    noFilename: false,
     color: 'auto',
   };
   const setExts = v => {
@@ -152,6 +156,8 @@ function parseArgs(argv) {
         case '--files-without-match': opts.filesWithoutMatch = true; break;
         case '--quiet': case '--silent': opts.quiet = true; break;
         case '--null': opts.nul = true; break;
+        case '--with-filename': opts.withFilename = true; break;
+        case '--no-filename': opts.noFilename = true; break;
         case '--ext': setExts(value()); break;
         case '--ignore': addIgnore(value()); break;
         case '--ignore-file': addIgnoreFile(value()); break;
@@ -193,6 +199,7 @@ function parseArgs(argv) {
           case 'L': opts.filesWithoutMatch = true; break;
           case 'q': opts.quiet = true; break;
           case '0': case 'Z': opts.nul = true; break;
+          case 'H': opts.withFilename = true; break;
           default: fail(`unknown option: -${ch}`);
         }
       }
@@ -206,6 +213,8 @@ function parseArgs(argv) {
   const aggregates = [opts.count, opts.filesWithMatches, opts.filesWithoutMatch, opts.quiet]
     .filter(Boolean).length;
   if (aggregates > 1) fail('only one of -c, -l, -L, -q may be given');
+  // Filename prefix can be forced on or off, but not both (grep -H / -h).
+  if (opts.withFilename && opts.noFilename) fail('-H cannot be combined with --no-filename');
   // Per-match print modes choose what is printed for each match; only one.
   const printModes = [opts.print, opts.attr != null, opts.text, opts.json].filter(Boolean).length;
   if (printModes > 1) fail('only one of -p, --attr, --text, --json may be given');
@@ -686,8 +695,11 @@ function main() {
     useStdin = true;
   }
 
-  // A label (file prefix) is shown when searching more than one file.
-  const showLabel = !useStdin && files.length > 1;
+  // A label (file prefix) is shown when searching more than one file; -H forces
+  // it on (even for one file or stdin) and --no-filename forces it off.
+  const showLabel = opts.withFilename ? true
+    : opts.noFilename ? false
+    : (!useStdin && files.length > 1);
 
   const out = [];
   let total = 0;
@@ -697,7 +709,7 @@ function main() {
 
   try {
     if (useStdin) {
-      total += searchSource(readStdin(), '(standard input)', false, opts, out, room());
+      total += searchSource(readStdin(), '(standard input)', showLabel, opts, out, room());
     } else {
       for (const f of files) {
         if (room() <= 0) break;               // -M: global budget exhausted

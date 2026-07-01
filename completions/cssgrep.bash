@@ -11,6 +11,7 @@ _cssgrep() {
 -A --after-context -B --before-context -C --context \
 -m --max-count -M --max-total -c --count \
 -l --files-with-matches -L --files-without-match -q --quiet -0 --null \
+-H --with-filename --no-filename \
 --color -h --help -V --version"
 
     case "$prev" in
