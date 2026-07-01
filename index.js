@@ -29,6 +29,7 @@ Options:
       --attr <name>      Print the value of attribute <name> (skips nodes without it).
       --text             Print the matched node's text content (whitespace collapsed).
       --json             Print one JSON record per match (NDJSON: file,line,col,html,text).
+      --parent <n>       Report the n-th ancestor of each match instead (dedup'd).
   -w, --max-width <n>    Truncate the shown line to <n> columns (ellipsis added).
   -m, --max-count <n>    Stop after <n> matches per file.
   -c, --count            Print only a count of matches (per file when relevant).
@@ -82,6 +83,7 @@ function parseArgs(argv) {
     text: false,
     json: false,
     nul: false,
+    parent: 0,
     color: 'auto',
   };
   const setExts = v => {
@@ -94,6 +96,7 @@ function parseArgs(argv) {
   };
   const setMaxWidth = v => { opts.maxWidth = positiveInt(v, '--max-width'); };
   const setMaxCount = v => { opts.maxCount = positiveInt(v, '--max-count'); };
+  const setParent = v => { opts.parent = positiveInt(v, '--parent'); };
   // Short flags that take a value (rest of the cluster, or the next argument).
   const shortValueFlags = { w: setMaxWidth, m: setMaxCount };
   for (let i = 0; i < argv.length; i++) {
@@ -122,6 +125,7 @@ function parseArgs(argv) {
         case '--attr': opts.attr = value(); break;
         case '--text': opts.text = true; break;
         case '--json': opts.json = true; break;
+        case '--parent': setParent(value()); break;
         case '--color': case '--colour': opts.color = inline != null ? inline : 'always'; break;
         default: fail(`unknown option: ${name}`);
       }
@@ -272,6 +276,31 @@ function textOf(node) {
 
 const collapseWs = s => s.replace(/\s+/g, ' ').trim();
 
+const isElement = n => n && (n.type === 'tag' || n.type === 'script' || n.type === 'style');
+
+// Climb n element levels from el, clamping at the document root.
+function ancestor(el, n) {
+  let node = el;
+  for (let k = 0; k < n; k++) {
+    if (!isElement(node.parent)) break;
+    node = node.parent;
+  }
+  return node;
+}
+
+// --parent re-points each match to its n-th ancestor; dedup by identity so a
+// shared container is reported once, preserving first-seen order.
+function retarget(nodes, opts) {
+  if (!opts.parent) return nodes;
+  const seen = new Set();
+  const result = [];
+  for (const el of nodes) {
+    const a = ancestor(el, opts.parent);
+    if (!seen.has(a)) { seen.add(a); result.push(a); }
+  }
+  return result;
+}
+
 // Re-indent a matched node's HTML from scratch (so minified input still comes
 // out readable). dom-serializer turns the parsed node back into a string;
 // js-beautify does the formatting.
@@ -309,11 +338,14 @@ function searchSource(src, name, showLabel, opts, out) {
     return limited.length;
   }
   const starts = opts.print ? null : lineIndex(src);
+  // --parent re-targets matches to ancestors (no-op without it). Aggregate
+  // modes above operate on the raw matches; targeting only affects what prints.
+  const targets = retarget(limited, opts);
   if (opts.json) {
     // NDJSON: one self-contained record per match. `html` is the exact source
     // slice; newlines are escaped by JSON.stringify, so each record stays on
     // one line. Ignores --color and -n (line/col are always present).
-    for (const el of limited) {
+    for (const el of targets) {
       const off = el.startIndex == null ? 0 : el.startIndex;
       const pos = offsetToPosition(starts, src, off);
       const nodeEnd = (el.endIndex == null ? off : el.endIndex) + 1;
@@ -327,7 +359,7 @@ function searchSource(src, name, showLabel, opts, out) {
     }
     return limited.length;
   }
-  for (const el of limited) {
+  for (const el of targets) {
     if (opts.print) {
       // -p shows the re-indented node only; no line:col locator.
       out.push(prettyPrint(el), ''); // blank separator between matches

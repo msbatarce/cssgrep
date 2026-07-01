@@ -46,6 +46,7 @@ locator appears only with `-n`:
 | `--attr <name>` | Print the value of attribute `<name>` for each match (nodes without it are skipped). Honors `-n` and `-w`. |
 | `--text` | Print the matched node's text content, whitespace collapsed. Honors `-n` and `-w`. |
 | `--json` | Print one JSON object per match (NDJSON), with `file`, `line`, `col`, `html`, `text`. |
+| `--parent <n>` | Report the `n`-th element ancestor of each match instead of the match itself (de-duplicated). Pairs well with `-p`. |
 | `-w`, `--max-width <n>` | Truncate the shown line to `n` columns (adds `…`). Value attaches or follows: `-w100`, `-w 100`, `--max-width=100`. |
 | `-m`, `--max-count <n>` | Stop after `n` matches per file (caps `-c` too). |
 | `-c`, `--count` | Print only the match count (per file when relevant). |
@@ -83,7 +84,18 @@ curl -s https://example.com | cssgrep 'p a'
 cssgrep 'a' --attr href index.html        # every link target
 cssgrep 'h1, h2' --text -r src/           # all heading text
 cssgrep 'img' -l -r .                      # files that contain an <img>
+
+# structural context — show the container the match lives in
+cssgrep '.price' -p --parent 2 page.html  # pretty-print each price's grandparent
 ```
+
+### Structural context (`--parent`)
+
+`--parent <n>` re-targets each match to its `n`-th element ancestor before
+printing — structural context that line-based `-A`/`-B` can't express. Shared
+ancestors are de-duplicated, so `cssgrep '.price' --parent 1 -p` prints each
+containing card once. It composes with every print mode (`-p`, `--attr`,
+`--text`, `--json`, or the default line output).
 
 ## Vim / Neovim integration
 

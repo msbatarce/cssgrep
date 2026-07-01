@@ -322,6 +322,43 @@ check('-0 count output uses NUL after the file name', () => {
   assert.ok(stdout.split('\n')[0].startsWith(`${fMulti}\x00`), JSON.stringify(stdout));
 });
 
+// --- --parent (structural context) ------------------------------------------
+const nested = '<section><article><h2>Title</h2><p class="x">body</p></article></section>';
+
+check('--parent 1 -p pretty-prints the immediate parent', () => {
+  const { stdout } = run(['p.x', '-p', '--parent', '1'], { input: nested });
+  assert.strictEqual(stdout.split('\n')[0], '<article>');
+  assert.ok(stdout.includes('<p class="x">body</p>'), stdout);
+});
+
+check('--parent 2 climbs two levels', () => {
+  const { stdout } = run(['p.x', '-p', '--parent', '2'], { input: nested });
+  assert.strictEqual(stdout.split('\n')[0], '<section>');
+});
+
+check('--parent dedups a shared ancestor', () => {
+  // two matches under one <article>; --parent 1 should print it once
+  const html = '<article><p class="x">a</p><p class="x">b</p></article>';
+  const { stdout } = run(['p.x', '--parent', '1', '--json'], { input: html });
+  const recs = stdout.trimEnd().split('\n');
+  assert.strictEqual(recs.length, 1, stdout);
+  assert.strictEqual(JSON.parse(recs[0]).html, html);
+});
+
+check('--parent clamps at the document root', () => {
+  // climbing far past the root just yields the top element, no crash
+  const { stdout, status } = run(['p.x', '--parent', '99', '--attr', 'class'], { input: nested });
+  assert.strictEqual(status, 0);
+  // the <section> (top element) has no class attribute, so nothing prints
+  assert.strictEqual(stdout, '');
+});
+
+check('--parent in line mode reports the ancestor position', () => {
+  const multilineNested = '<section>\n  <article>\n    <p class="x">body</p>\n  </article>\n</section>\n';
+  const { stdout } = run(['p.x', '-n', '--parent', '1'], { input: multilineNested });
+  assert.strictEqual(stdout.split('\n')[0].split(' ')[0], '2:3');  // <article> at line 2 col 3
+});
+
 check('--print: no line:col locator, lone text child stays inline', () => {
   const { stdout } = run(['p#x', '-p'], { input: multiline });
   const lines = stdout.trimEnd().split('\n');
