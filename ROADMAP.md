@@ -11,6 +11,11 @@ tests + docs, suite green) — see `CLAUDE.md`. Phases are independently shippab
 and `-A`/`-B`/`-C`. This file is kept as the design record; future work can
 extend it.
 
+**Shipped beyond the original plan:** `-M`/`--max-total` (global match cap,
+vs per-file `-m`); matched-node highlighting inside `--parent -p` output; and
+`-i`/`--ignore` + `--ignore-file` (gitignore-flavored globs to skip paths while
+recursing).
+
 ## Output-mode model (design backbone)
 
 New flags compose cleanly only as three independent axes; place each feature on
