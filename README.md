@@ -65,8 +65,9 @@ value-taking flag may close such a cluster (`-rnw100`).
 
 When coloring is on, the matched node is highlighted within its line (grep's
 bold-red); the `file:` prefix and `line:col` locator get their own colors
-(magenta and green, like grep). Under `-p` nothing is colored — the node is
-lifted out of its line, so there's no in-line match to highlight.
+(magenta and green, like grep). Plain `-p` prints no color (the whole block is
+the match), but `-p --parent <n>` highlights the original matched node inside
+the printed container, so you can see what matched within its surroundings.
 
 Exit status: `0` if any match was found, `1` if none, `2` on error — same
 convention as `grep`.

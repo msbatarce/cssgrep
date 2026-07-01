@@ -353,6 +353,23 @@ check('--parent clamps at the document root', () => {
   assert.strictEqual(stdout, '');
 });
 
+check('--parent -p highlights the matched node inside the container', () => {
+  const html = '<section><article><h2>T</h2><p class="x">body</p></article></section>';
+  const { stdout } = run(['.x', '-p', '--parent', '1', '--color=always'], { input: html });
+  assert.ok(stdout.includes('<article>'), stdout);                    // container printed
+  assert.ok(stdout.includes('\x1b[1;31m'), 'match color present');
+  assert.ok(stdout.includes('<p class="x">body</p>\x1b[0m'), stdout); // node wrapped + reset
+  assert.ok(/<h2>T<\/h2>/.test(stdout), 'sibling preserved');         // layout intact
+  assert.ok(!stdout.includes('<!--'), 'sentinels stripped');
+});
+
+check('--parent -p without color emits no escapes (and no sentinels)', () => {
+  const { stdout } = run(['.x', '-p', '--parent', '1', '--color=never'],
+    { input: '<article><p class="x">b</p></article>' });
+  assert.ok(!stdout.includes('\x1b['), stdout);
+  assert.ok(!stdout.includes('\uE000') && !stdout.includes('<!--'), stdout);
+});
+
 check('--parent in line mode reports the ancestor position', () => {
   const multilineNested = '<section>\n  <article>\n    <p class="x">body</p>\n  </article>\n</section>\n';
   const { stdout } = run(['p.x', '-n', '--parent', '1'], { input: multilineNested });

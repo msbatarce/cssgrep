@@ -193,10 +193,10 @@ function parseArgs(argv) {
     fail(`invalid --color value: ${opts.color} (expected auto, always or never)`);
   }
   // Resolve the tri-state into a single boolean: color only when forced on, or
-  // 'auto' and stdout is an interactive terminal. -p never colors (the node is
-  // lifted out of its line, so there's no in-line match to highlight).
-  opts.colorOn = !opts.print &&
-    (opts.color === 'always' || (opts.color === 'auto' && Boolean(process.stdout.isTTY)));
+  // 'auto' and stdout is an interactive terminal. Plain -p still prints no
+  // color (it has nothing to highlight) — that's gated where it prints, not
+  // here, so --parent -p can highlight the matched node inside the container.
+  opts.colorOn = opts.color === 'always' || (opts.color === 'auto' && Boolean(process.stdout.isTTY));
   return opts;
 }
 
@@ -330,15 +330,54 @@ function retarget(nodes, opts) {
   return result;
 }
 
+// Sentinels marking where a highlighted node begins/ends. They are injected as
+// HTML *comment* nodes (not text) so js-beautify keeps the surrounding block
+// layout — text markers would make adjacent block elements collapse inline.
+// The private-use payload can't occur in real content, so it never collides.
+// After beautifying, each `<!--…-->` marker is swapped for an ANSI code.
+const HL_START = '';
+const HL_END = '';
+
 // Re-indent a matched node's HTML from scratch (so minified input still comes
 // out readable). dom-serializer turns the parsed node back into a string;
-// js-beautify does the formatting.
-function prettyPrint(el) {
-  return beautify(render(el, { encodeEntities: false }), {
-    indent_size: 2,
-    wrap_line_length: 0, // never wrap long lines (e.g. long text/attributes)
-    preserve_newlines: false,
-  });
+// js-beautify does the formatting. When `origins` (descendant nodes to
+// highlight) is given and coloring is on, those nodes are wrapped in the match
+// color within the printed block.
+function prettyPrint(el, origins, opts) {
+  const highlight = origins && origins.length && opts && opts.colorOn;
+  const inserted = [];
+  if (highlight) {
+    // Bracket each origin with sentinel comment nodes among its siblings.
+    for (const m of origins) {
+      if (!m.parent) continue;
+      const kids = m.parent.children;
+      const i = kids.indexOf(m);
+      if (i < 0) continue;
+      const start = { type: 'comment', data: HL_START };
+      const end = { type: 'comment', data: HL_END };
+      kids.splice(i, 0, start);
+      kids.splice(i + 2, 0, end);
+      inserted.push({ kids, start, end });
+    }
+  }
+  let html;
+  try {
+    html = beautify(render(el, { encodeEntities: false }), {
+      indent_size: 2,
+      wrap_line_length: 0, // never wrap long lines (e.g. long text/attributes)
+      preserve_newlines: false,
+    });
+  } finally {
+    // Always restore the DOM so the markers don't leak into later matches.
+    for (const { kids, start, end } of inserted) {
+      let k = kids.indexOf(start); if (k >= 0) kids.splice(k, 1);
+      k = kids.indexOf(end); if (k >= 0) kids.splice(k, 1);
+    }
+  }
+  if (!highlight) return html;
+  return html
+    .replace(new RegExp(`<!--\\s*${HL_START}\\s*-->`, 'g'), `\x1b[${COLORS.match}m`)
+    .replace(new RegExp(`<!--\\s*${HL_END}\\s*-->`, 'g'), '\x1b[0m');
 }
 
 // -A/-B/-C: emit each match line plus its surrounding context lines, grep-style.
@@ -422,6 +461,16 @@ function searchSource(src, name, showLabel, opts, out) {
   // --parent re-targets matches to ancestors (no-op without it). Aggregate
   // modes above operate on the raw matches; targeting only affects what prints.
   const targets = retarget(limited, opts);
+  // For --parent + -p, remember which original matches sit under each ancestor
+  // so they can be highlighted inside the printed container.
+  const originsByTarget = new Map();
+  if (opts.parent && opts.print) {
+    for (const el of limited) {
+      const a = ancestor(el, opts.parent);
+      if (!originsByTarget.has(a)) originsByTarget.set(a, []);
+      originsByTarget.get(a).push(el);
+    }
+  }
   if (opts.before > 0 || opts.after > 0) {
     emitContext(src, starts, name, showLabel, targets, opts, out);
     return limited.length;
@@ -446,8 +495,9 @@ function searchSource(src, name, showLabel, opts, out) {
   }
   for (const el of targets) {
     if (opts.print) {
-      // -p shows the re-indented node only; no line:col locator.
-      out.push(prettyPrint(el), ''); // blank separator between matches
+      // -p shows the re-indented node only; no line:col locator. With --parent,
+      // the original matched descendants are highlighted inside the container.
+      out.push(prettyPrint(el, originsByTarget.get(el), opts), ''); // blank separator
       continue;
     }
     const off = el.startIndex == null ? 0 : el.startIndex;
