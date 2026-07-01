@@ -16,6 +16,12 @@ vs per-file `-m`); matched-node highlighting inside `--parent -p` output; and
 `-i`/`--ignore` + `--ignore-file` (gitignore-flavored globs to skip paths while
 recursing).
 
+**v1.1 (grep-parity round):** `-H`/`--with-filename` + `--no-filename`,
+`-s`/`--no-messages`, automatic binary-file skipping, `--include`/`--exclude`
+globs with brace alternation (`{a,b,c}`), and `--max-depth`. Plus CI hardening
+(3-OS × 2-Node test matrix, npm publish provenance, binary smoke test) and repo
+scaffolding (issue/PR templates, dependabot, editorconfig).
+
 ## Output-mode model (design backbone)
 
 New flags compose cleanly only as three independent axes; place each feature on
@@ -119,6 +125,23 @@ Most involved; refactors the line-output path.
 - `test.js`: a `check(...)` per new behavior.
 - `README.md`: options table + short sections for extraction / context / `--parent`.
 - New in Phase 0: `LICENSE`, `.github/workflows/test.yml`.
+
+## Deferred / under discussion (not implemented)
+
+Considered during the v1.1 round and intentionally left out for now:
+
+- **`-v`/`--invert-match`** — under discussion. Element-level inversion is
+  semantically murky for a selector tool ("which non-matching nodes?"); decide
+  the semantics before implementing. `-L` already covers "files without a match".
+- **Wider distribution** — Homebrew tap/formula and a Scoop manifest. More reach,
+  but ongoing per-release maintenance; deferred.
+- **`-f`/`-e` (patterns from a file / multiple `-e`)** — low value: a CSS
+  selector list (`a, .b`) already expresses multi-selector OR in one argument.
+- **Repo docs polish** — README status badges, a committed `CHANGELOG.md` (the
+  release workflow auto-generates GitHub Release notes today), and a
+  `CONTRIBUTING.md`. Add when desired.
+- **`-a`/`--text` binary override** — force-parse a file the binary heuristic
+  skipped. Add if a real need appears.
 
 ## Verification
 
