@@ -20,7 +20,7 @@ recursing).
 `-s`/`--no-messages`, automatic binary-file skipping, `--include`/`--exclude`
 globs with brace alternation (`{a,b,c}`), and `--max-depth`. Plus CI hardening
 (3-OS × 2-Node test matrix, npm publish provenance, binary smoke test) and repo
-scaffolding (issue/PR templates, dependabot, editorconfig).
+scaffolding (issue/PR templates, editorconfig).
 
 ## Output-mode model (design backbone)
 
