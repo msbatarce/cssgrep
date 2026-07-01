@@ -9,12 +9,20 @@ its output plugs straight into grep-aware editors.
 
 ## Install
 
+From npm (requires Node ≥ 20.19):
+
+```sh
+npm install -g cssgrep
+```
+
+Or from a clone, for development:
+
 ```sh
 npm install        # install deps
 npm link           # put `cssgrep` on your PATH (optional)
 ```
 
-Requires Node (see `.nvmrc`).
+Check the installed version with `cssgrep --version`.
 
 ## Usage
 
@@ -62,6 +70,7 @@ locator appears only with `-n`:
 | `-0`, `--null` | Output a NUL after each file name instead of `:` (or, with `-l`/`-L`, instead of the newline) — pipe to `xargs -0`. |
 | `--color[=<when>]` | Colorize output: `auto` (default — color only when stdout is a terminal), `always`, or `never`. A bare `--color` means `always`. |
 | `-h`, `--help` | Show help. |
+| `-V`, `--version` | Print the version and exit. |
 
 Boolean short flags can be combined into one token (`-rn` is `-r -n`), and a
 value-taking flag may close such a cluster (`-rnw100`).

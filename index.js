@@ -8,6 +8,12 @@ const { selectAll } = require('css-select');
 const render = require('dom-serializer').default;
 const { html: beautify } = require('js-beautify');
 
+// Single source of truth for the version. A constant rather than a read of
+// package.json, so it survives compilation into a standalone binary (Bun
+// --compile / Node SEA), where package.json won't sit next to the executable.
+// Keep in sync with package.json on release.
+const VERSION = '1.0.0';
+
 const USAGE = `cssgrep - search HTML by CSS selector, grep-style.
 
 Usage:
@@ -45,6 +51,7 @@ Options:
   -0, --null             Separate the file name with a NUL byte (for xargs -0).
       --color[=<when>]   Colorize output: auto (default), always or never.
   -h, --help             Show this help.
+  -V, --version          Show version and exit.
 
 Short flags combine (-rn) and a value attaches to its flag (-w100) or follows it
 (-w 100); a value-taking flag may close a cluster (-rnw100). Long options take a
@@ -136,6 +143,7 @@ function parseArgs(argv) {
       const value = () => (inline != null ? inline : argv[++i]);
       switch (name) {
         case '--help': process.stdout.write(USAGE + '\n'); process.exit(0); break;
+        case '--version': process.stdout.write(`cssgrep ${VERSION}\n`); process.exit(0); break;
         case '--recursive': opts.recursive = true; break;
         case '--line-number': opts.lineNumber = true; break;
         case '--print': opts.print = true; break;
@@ -176,6 +184,7 @@ function parseArgs(argv) {
         }
         switch (ch) {
           case 'h': process.stdout.write(USAGE + '\n'); process.exit(0); break;
+          case 'V': process.stdout.write(`cssgrep ${VERSION}\n`); process.exit(0); break;
           case 'r': opts.recursive = true; break;
           case 'n': opts.lineNumber = true; break;
           case 'p': opts.print = true; break;

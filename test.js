@@ -594,6 +594,17 @@ check('invalid --color value: exit status 2', () => {
   assert.strictEqual(status, 2);
 });
 
+// --- meta flags --------------------------------------------------------------
+check('--version prints "cssgrep <version>" and exits 0', () => {
+  const { status, stdout } = run(['--version']);
+  assert.strictEqual(status, 0);
+  assert.ok(/^cssgrep \d+\.\d+\.\d+\n$/.test(stdout), JSON.stringify(stdout));
+});
+
+check('-V short flag matches --version', () => {
+  assert.strictEqual(run(['-V']).stdout, run(['--version']).stdout);
+});
+
 // --- option parsing ergonomics ----------------------------------------------
 check('-w100 attached short value equals -w 100', () => {
   const a = run(['span.hit', '-w', '12'], { input: minified }).stdout;

@@ -6,6 +6,22 @@
   "bin": {
     "cssgrep": "index.js"
   },
+  "files": [
+    "index.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/matias/vim-css-selector.git"
+  },
+  "bugs": {
+    "url": "https://github.com/matias/vim-css-selector/issues"
+  },
+  "homepage": "https://github.com/matias/vim-css-selector#readme",
   "scripts": {
     "test": "node test.js"
   },
