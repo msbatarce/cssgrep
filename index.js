@@ -48,6 +48,7 @@ Options:
   -l, --files-with-matches   Print only the names of files that have a match.
   -L, --files-without-match  Print only the names of files with no match.
   -q, --quiet            Print nothing; exit 0 on first match, 1 if none.
+  -s, --no-messages      Suppress error messages for unreadable/missing files.
   -0, --null             Separate the file name with a NUL byte (for xargs -0).
   -H, --with-filename    Always print the file name prefix (even for one file).
       --no-filename      Never print the file name prefix (even for many files).
@@ -105,6 +106,7 @@ function parseArgs(argv) {
     ignore: [],
     withFilename: false,
     noFilename: false,
+    noMessages: false,
     color: 'auto',
   };
   const setExts = v => {
@@ -158,6 +160,7 @@ function parseArgs(argv) {
         case '--null': opts.nul = true; break;
         case '--with-filename': opts.withFilename = true; break;
         case '--no-filename': opts.noFilename = true; break;
+        case '--no-messages': opts.noMessages = true; break;
         case '--ext': setExts(value()); break;
         case '--ignore': addIgnore(value()); break;
         case '--ignore-file': addIgnoreFile(value()); break;
@@ -200,6 +203,7 @@ function parseArgs(argv) {
           case 'q': opts.quiet = true; break;
           case '0': case 'Z': opts.nul = true; break;
           case 'H': opts.withFilename = true; break;
+          case 's': opts.noMessages = true; break;
           default: fail(`unknown option: -${ch}`);
         }
       }
@@ -653,7 +657,7 @@ function* walk(dir, opts) {
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
   } catch (e) {
-    process.stderr.write(`cssgrep: ${dir}: ${e.code || e.message}\n`);
+    if (!opts.noMessages) process.stderr.write(`cssgrep: ${dir}: ${e.code || e.message}\n`);
     return;
   }
   for (const e of entries) {
@@ -685,7 +689,7 @@ function main() {
     const targets = opts.paths.length ? opts.paths : ['.'];
     for (const p of targets) {
       const st = fs.statSync(p, { throwIfNoEntry: false });
-      if (!st) { process.stderr.write(`cssgrep: ${p}: no such file or directory\n`); continue; }
+      if (!st) { if (!opts.noMessages) process.stderr.write(`cssgrep: ${p}: no such file or directory\n`); continue; }
       if (st.isDirectory()) files.push(...walk(p, opts));
       else files.push(p);
     }
@@ -717,7 +721,7 @@ function main() {
         try {
           src = fs.readFileSync(f, 'utf8');
         } catch (e) {
-          process.stderr.write(`cssgrep: ${f}: ${e.code || e.message}\n`);
+          if (!opts.noMessages) process.stderr.write(`cssgrep: ${f}: ${e.code || e.message}\n`);
           continue;
         }
         total += searchSource(src, f, showLabel, opts, out, room());

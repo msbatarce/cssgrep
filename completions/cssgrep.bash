@@ -10,7 +10,7 @@ _cssgrep() {
 -p --print --attr --text --json --parent -w --max-width \
 -A --after-context -B --before-context -C --context \
 -m --max-count -M --max-total -c --count \
--l --files-with-matches -L --files-without-match -q --quiet -0 --null \
+-l --files-with-matches -L --files-without-match -q --quiet -s --no-messages -0 --null \
 -H --with-filename --no-filename \
 --color -h --help -V --version"
 

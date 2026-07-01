@@ -92,6 +92,7 @@ locator appears only with `-n`:
 | `-l`, `--files-with-matches` | Print only the names of files that contain a match. |
 | `-L`, `--files-without-match` | Print only the names of files with no match. |
 | `-q`, `--quiet` | Print nothing; exit `0` on the first match, `1` if none. Stops early. |
+| `-s`, `--no-messages` | Suppress error messages for unreadable or missing files (handy with `-r`). |
 | `-0`, `--null` | Output a NUL after each file name instead of `:` (or, with `-l`/`-L`, instead of the newline) — pipe to `xargs -0`. |
 | `-H`, `--with-filename` | Always print the `file:` prefix, even for a single file or stdin. |
 | `--no-filename` | Never print the `file:` prefix, even when searching multiple files. |

@@ -5,7 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 
 const CLI = path.join(__dirname, 'index.js');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cssgrep-'));
@@ -626,6 +626,15 @@ check('--no-filename suppresses the prefix across multiple files', () => {
 check('-H with --no-filename: exit status 2', () => {
   const { status } = run(['div.a', '-H', '--no-filename'], { input: multiline, expectStatus: 2 });
   assert.strictEqual(status, 2);
+});
+
+// --- -s / --no-messages ------------------------------------------------------
+check('-s suppresses the error for a missing file', () => {
+  const missing = path.join(tmp, 'does-not-exist.html');
+  const without = spawnSync('node', [CLI, 'div.a', missing], { encoding: 'utf8' });
+  assert.ok(without.stderr.length > 0, 'expected an error without -s');
+  const withS = spawnSync('node', [CLI, 'div.a', '-s', missing], { encoding: 'utf8' });
+  assert.strictEqual(withS.stderr, '', withS.stderr);
 });
 
 // --- option parsing ergonomics ----------------------------------------------
