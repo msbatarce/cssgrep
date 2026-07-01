@@ -6,6 +6,7 @@
 _cssgrep() {
   _arguments -s -S \
     '(-r --recursive)'{-r,--recursive}'[recurse into directory arguments]' \
+    '--max-depth[limit -r recursion depth (1 = given dir only)]:depth:' \
     '--ext[extensions to scan with -r]:extensions (comma-separated):' \
     '*--include[only search files matching glob (replaces --ext)]:glob:' \
     '*'{-i,--ignore}'[skip files/dirs matching glob while recursing]:glob:' \

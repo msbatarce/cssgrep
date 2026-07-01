@@ -73,6 +73,7 @@ locator appears only with `-n`:
 | Flag | Description |
 |------|-------------|
 | `-r`, `--recursive` | Recurse into directory arguments (defaults to `.` if none given). |
+| `--max-depth <n>` | Limit `-r` recursion depth (`1` = the given directory only, no subdirectories). |
 | `--ext <list>` | Extensions to scan with `-r` (default `html,htm`). Value attaches with `=`: `--ext htm` or `--ext=htm`. |
 | `--include <glob>` | Only search files whose name/path matches `<glob>` while recursing (repeatable). Replaces `--ext` — the two can't be combined. e.g. `--include '*.{html,htm,xhtml}'`. |
 | `-i`, `--ignore <glob>` | Skip files/dirs matching `<glob>` while recursing (repeatable). `node_modules`, `*.min.html`, `build/` (dir-only), or path globs like `src/vendor/**`. |

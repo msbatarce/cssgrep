@@ -676,6 +676,18 @@ check('--exclude is an alias of --ignore', () => {
   assert.strictEqual(b, a);
 });
 
+// --- --max-depth -------------------------------------------------------------
+check('--max-depth 1 stays at the top level (no subdirectories)', () => {
+  const out = execFileSync('node', [CLI, 'p#x', '-rn', '--max-depth', '1'], { cwd: tmp, encoding: 'utf8' });
+  assert.ok(/multi\.html/.test(out), out);
+  assert.ok(!/nested\.html/.test(out), `sub/ should not be searched\n${out}`);
+});
+
+check('--max-depth 2 descends one level into sub/', () => {
+  const out = execFileSync('node', [CLI, 'p#x', '-rn', '--max-depth', '2'], { cwd: tmp, encoding: 'utf8' });
+  assert.ok(/nested\.html/.test(out), out);
+});
+
 // --- option parsing ergonomics ----------------------------------------------
 check('-w100 attached short value equals -w 100', () => {
   const a = run(['span.hit', '-w', '12'], { input: minified }).stdout;

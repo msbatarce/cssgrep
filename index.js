@@ -29,6 +29,7 @@ Output (one line per match):
 
 Options:
   -r, --recursive        Recurse into directory arguments.
+      --max-depth <n>    Limit -r recursion depth (1 = the given dir only).
       --ext <list>       Comma-separated extensions for -r (default: html,htm).
       --include <glob>   Only search files matching <glob> (replaces --ext; repeatable).
   -i, --ignore <glob>    Skip files/dirs matching <glob> when recursing (repeatable).
@@ -93,6 +94,7 @@ function parseArgs(argv) {
     recursive: false,
     exts: ['html', 'htm'],
     extGiven: false,
+    maxDepth: 0,
     lineNumber: false,
     print: false,
     maxWidth: 0,
@@ -129,6 +131,7 @@ function parseArgs(argv) {
   const setMaxWidth = v => { opts.maxWidth = positiveInt(v, '--max-width'); };
   const setMaxCount = v => { opts.maxCount = positiveInt(v, '--max-count'); };
   const setMaxTotal = v => { opts.maxTotal = positiveInt(v, '--max-total'); };
+  const setMaxDepth = v => { opts.maxDepth = positiveInt(v, '--max-depth'); };
   const setParent = v => { opts.parent = positiveInt(v, '--parent'); };
   const setAfter = v => { opts.after = boundedInt(v, '--after-context', 0); };
   const setBefore = v => { opts.before = boundedInt(v, '--before-context', 0); };
@@ -177,6 +180,7 @@ function parseArgs(argv) {
         case '--max-width': setMaxWidth(value()); break;
         case '--max-count': setMaxCount(value()); break;
         case '--max-total': setMaxTotal(value()); break;
+        case '--max-depth': setMaxDepth(value()); break;
         case '--attr': opts.attr = value(); break;
         case '--text': opts.text = true; break;
         case '--json': opts.json = true; break;
@@ -677,7 +681,7 @@ function matchesAny(name, full, isDir, matchers) {
   return false;
 }
 
-function* walk(dir, opts) {
+function* walk(dir, opts, depth = 1) {
   let entries;
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -690,7 +694,8 @@ function* walk(dir, opts) {
     const isDir = e.isDirectory();
     if (opts.ignore.length && matchesAny(e.name, full, isDir, opts.ignore)) continue;
     if (isDir) {
-      yield* walk(full, opts);
+      // --max-depth caps how far we descend; depth 1 = the target's children.
+      if (!opts.maxDepth || depth < opts.maxDepth) yield* walk(full, opts, depth + 1);
     } else if (e.isFile()) {
       // --include replaces the extension filter; otherwise filter by --ext.
       if (opts.include.length) {

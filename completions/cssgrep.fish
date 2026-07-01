@@ -2,6 +2,7 @@
 # Install: place this file in ~/.config/fish/completions/ (named cssgrep.fish).
 
 complete -c cssgrep -s r -l recursive -d 'Recurse into directory arguments'
+complete -c cssgrep -l max-depth -x -d 'Limit -r recursion depth (1 = given dir only)'
 complete -c cssgrep -l ext -x -d 'Extensions to scan with -r (comma-separated)'
 complete -c cssgrep -l include -x -d 'Only search files matching glob (replaces --ext)'
 complete -c cssgrep -s i -l ignore -x -d 'Skip files/dirs matching glob while recursing'
