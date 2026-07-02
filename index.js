@@ -47,7 +47,8 @@ Options:
   -C, --context <n>          Print <n> source lines before and after each match.
   -m, --max-count <n>    Stop after <n> matches per file.
   -M, --max-total <n>    Stop after <n> matches in total (across all files).
-  -c, --count            Print only a count of matches (per file when relevant).
+  -c, --count            Print only a count of matches (per file when
+                         relevant, zeros included, like grep).
   -l, --files-with-matches   Print only the names of files that have a match.
   -L, --files-without-match  Print only the names of files with no match.
   -q, --quiet            Print nothing; exit 0 on first match, 1 if none.
@@ -552,10 +553,11 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
   const cap = Math.min(opts.maxCount || Infinity, limit);
   const limited = Number.isFinite(cap) ? matches.slice(0, cap) : matches;
   if (opts.count) {
-    if (limited.length) {
-      const fileSep = opts.nul ? '\0' : ':';
-      out.push(label ? `${label}${fileSep}${limited.length}` : String(limited.length));
-    }
+    // grep parity: every searched file reports a count, zeros included, so
+    // scripts get one row per file (exit status still says whether anything
+    // matched at all).
+    const fileSep = opts.nul ? '\0' : ':';
+    out.push(label ? `${label}${fileSep}${limited.length}` : String(limited.length));
     return limited.length;
   }
   const starts = opts.print ? null : lineIndex(src);

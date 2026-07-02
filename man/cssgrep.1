@@ -158,7 +158,9 @@ Stop after
 matches in total across all files.
 .TP
 .BR \-c ", " \-\-count
-Print only a count of matches (per file when relevant).
+Print only a count of matches (per file when relevant). Files with no match
+report a zero count, as in
+.BR grep .
 .TP
 .BR \-l ", " \-\-files\-with\-matches
 Print only the names of files that have a match.

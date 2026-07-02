@@ -95,7 +95,7 @@ locator appears only with `-n`:
 | `-C`, `--context <n>` | Print `n` source lines before and after each match. |
 | `-m`, `--max-count <n>` | Stop after `n` matches per file (caps `-c` too). |
 | `-M`, `--max-total <n>` | Stop after `n` matches in total across all files. |
-| `-c`, `--count` | Print only the match count (per file when relevant). |
+| `-c`, `--count` | Print only the match count (per file when relevant, zeros included — `file:0`, like grep). |
 | `-l`, `--files-with-matches` | Print only the names of files that contain a match. |
 | `-L`, `--files-without-match` | Print only the names of files with no match. |
 | `-q`, `--quiet` | Print nothing; exit `0` on the first match, `1` if none. Stops early. |

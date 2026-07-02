@@ -782,6 +782,20 @@ check('trailing --attr without a value: exit 2, not silently ignored', () => {
   assert.strictEqual(status, 2);
 });
 
+check('-c prints zero counts per file, grep-style', () => {
+  // fMin has no div.a; it must still report min.html:0 (exit 0: fMulti matched).
+  const { stdout, status } = run(['div.a', '-c', fMulti, fMin]);
+  assert.strictEqual(status, 0);
+  const lines = stdout.trimEnd().split('\n').sort();
+  assert.deepStrictEqual(lines, [`${fMin}:0`, `${fMulti}:2`]);
+});
+
+check('-c single input with no match prints a lone 0 and exits 1', () => {
+  const { stdout, status } = run(['.nope', '-c'], { input: multiline, expectStatus: 1 });
+  assert.strictEqual(status, 1);
+  assert.strictEqual(stdout.trimEnd(), '0');
+});
+
 check('bare --color means auto: no escapes when stdout is a pipe', () => {
   // grep parity — a bare --color used to force color on.
   const { stdout, status } = run(['div.a', '--color'], { input: multiline });
