@@ -95,7 +95,7 @@ locator appears only with `-n`:
 | `-B`, `--before-context <n>` | Print `n` source lines before each match. |
 | `-C`, `--context <n>` | Print `n` source lines before and after each match. |
 | `-m`, `--max-count <n>` | Stop after `n` matches per file (caps `-c` too). |
-| `-M`, `--max-total <n>` | Stop after `n` matches in total across all files. |
+| `-M`, `--max-total <n>` | Stop after `n` matches in total across all files. The budget counts matches, not files — combined with `-l`/`-L`, scanning stops once `n` matches have been seen, which can cut the file list short. |
 | `-c`, `--count` | Print only the match count (per file when relevant, zeros included — `file:0`, like grep). |
 | `-l`, `--files-with-matches` | Print only the names of files that contain a match. |
 | `-L`, `--files-without-match` | Print only the names of files with no match. |
@@ -116,7 +116,7 @@ segment), `**` (across `/`), `?` (one non-slash char), and brace alternation
 like `*.{html,htm}`. A trailing `/` matches directories only; a pattern with a
 `/` matches against the path, otherwise the basename — gitignore-flavored.
 
-Binary files are detected (a NUL byte or a high ratio of control bytes in the
+Binary input is detected (a NUL byte or a high ratio of control bytes in the
 first 8 KB) and skipped with a note on stderr — parsing them as HTML is never
 useful. Suppress the note with `-s` (or `-q`).
 

@@ -344,10 +344,18 @@ function lineTextAt(starts, src, lineNo) {
   return { lineStart, text };
 }
 
+// Never cut between the halves of a surrogate pair: a lone half is invalid
+// Unicode and serializes as U+FFFD garbage. Backing off one unit loses at most
+// one display column.
+function safeCut(text, at) {
+  const c = text.charCodeAt(at - 1);
+  return c >= 0xd800 && c <= 0xdbff ? at - 1 : at;
+}
+
 function truncate(text, maxWidth) {
   if (!maxWidth || text.length <= maxWidth) return text;
-  if (maxWidth <= 1) return text.slice(0, maxWidth);
-  return text.slice(0, maxWidth - 1) + '…'; // …
+  if (maxWidth <= 1) return text.slice(0, safeCut(text, maxWidth));
+  return text.slice(0, safeCut(text, maxWidth - 1)) + '…'; // …
 }
 
 // Produce the visible match text: truncate first (so --max-width still measures
@@ -729,6 +737,9 @@ function* walk(dir, opts, depth = 1, visited = null) {
     if (!opts.noMessages) process.stderr.write(`cssgrep: ${dir}: ${e.code || e.message}\n`);
     return;
   }
+  // readdir order is filesystem-dependent; sort so output order (and therefore
+  // -M/-m truncation points) is stable across platforms.
+  entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   for (const e of entries) {
     const full = path.join(dir, e.name);
     let isDir = e.isDirectory();
@@ -762,7 +773,7 @@ function* walk(dir, opts, depth = 1, visited = null) {
 }
 
 function readStdin() {
-  return fs.readFileSync(0, 'utf8');
+  return fs.readFileSync(0); // Buffer: sniffed for binary before decoding
 }
 
 // Heuristic binary-file detector (grep/git style). A NUL byte in the first 8 KB
@@ -818,7 +829,14 @@ function main() {
 
   try {
     if (useStdin) {
-      total += searchSource(readStdin(), '(standard input)', showLabel, opts, out, room());
+      const buf = readStdin();
+      if (looksBinary(buf)) {
+        if (!opts.noMessages && !opts.quiet) {
+          process.stderr.write('cssgrep: (standard input): binary input (skipped)\n');
+        }
+      } else {
+        total += searchSource(buf.toString('utf8'), '(standard input)', showLabel, opts, out, room());
+      }
     } else {
       for (const f of files) {
         if (room() <= 0) break;               // -M: global budget exhausted

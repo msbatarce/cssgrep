@@ -33,9 +33,9 @@ Input is read from the
 .I file
 arguments, recursively from directories with
 .BR \-r ,
-or from standard input when no path is given. Binary files (a NUL byte or a
-high ratio of control bytes in the first 8 KB) are skipped with a note on
-standard error, suppressible with
+or from standard input when no path is given. Binary input, including standard
+input (a NUL byte or a high ratio of control bytes in the first 8 KB), is
+skipped with a note on standard error, suppressible with
 .B \-s
 or
 .BR \-q .
@@ -161,7 +161,12 @@ matches per file.
 .BR \-M ", " \-\-max\-total " \fIn\fR"
 Stop after
 .I n
-matches in total across all files.
+matches in total across all files. The budget counts matches, not files;
+combined with
+.B \-l
+or
+.B \-L
+scanning stops once the budget is spent, which can cut the file list short.
 .TP
 .BR \-c ", " \-\-count
 Print only a count of matches (per file when relevant). Files with no match

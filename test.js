@@ -894,6 +894,28 @@ check('large result set is not truncated through a pipe', () => {
   assert.strictEqual(stdout.trimEnd().split('\n').length, 20000);
 });
 
+check('-w never slices an astral char in half', () => {
+  // Cutting <i>😀😀</i> at width 5 would land between the surrogate halves of
+  // the first emoji; a lone half serializes as U+FFFD.
+  const { stdout } = run(['i', '-w', '5'], { input: '<i>😀😀</i>' });
+  assert.ok(!stdout.includes('�'), 'output contains a broken surrogate');
+  assert.strictEqual(stdout.trimEnd(), '<i>…');
+});
+
+check('binary stdin is skipped, exit 1', () => {
+  const { stdout, status } = run(['div'], {
+    input: '<div>x</div>\x00\x01\x02\x03', expectStatus: 1,
+  });
+  assert.strictEqual(status, 1);
+  assert.strictEqual(stdout, '');
+});
+
+check('-r walks in sorted order for deterministic output', () => {
+  // multi.html sorts before sub/nested.html; readdir order must not leak through.
+  const { stdout } = run(['div.a', '-r', '-l', tmp]);
+  assert.deepStrictEqual(stdout.trimEnd().split('\n'), [fMulti, fNested]);
+});
+
 // --- teardown ---------------------------------------------------------------
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(failures ? `\n${failures} test(s) failed` : '\nall tests passed');
