@@ -642,9 +642,15 @@ function globToRegex(glob) {
     const c = glob[i];
     if (c === '*') {
       if (glob[i + 1] === '*') {            // **  (crosses /)
-        re += '.*';
         i++;
-        if (glob[i + 1] === '/') i++;       // consume the slash in **/
+        if (glob[i + 1] === '/') {
+          // `**/` spans whole segments (or none): `**/foo` matches `foo` and
+          // `a/b/foo`, but not `barfoo` — the `.*` must end at a `/`.
+          re += '(?:.*/)?';
+          i++;
+        } else {
+          re += '.*';
+        }
       } else {
         re += '[^/]*';
       }

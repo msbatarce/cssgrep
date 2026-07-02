@@ -781,6 +781,18 @@ check('trailing --attr without a value: exit 2, not silently ignored', () => {
   assert.strictEqual(status, 2);
 });
 
+check('**/ glob stops at segment boundaries', () => {
+  // Regression: **/foo.html compiled to .*foo\.html and matched barfoo.html.
+  const gRoot = path.join(tmp, 'globtest');
+  fs.mkdirSync(path.join(gRoot, 'sub'), { recursive: true });
+  fs.writeFileSync(path.join(gRoot, 'foo.html'), '<p class="g">a</p>');
+  fs.writeFileSync(path.join(gRoot, 'barfoo.html'), '<p class="g">b</p>');
+  fs.writeFileSync(path.join(gRoot, 'sub', 'foo.html'), '<p class="g">c</p>');
+  const { stdout } = run(['p.g', '-r', '--include', '**/foo.html', '-l', gRoot]);
+  const files = stdout.trimEnd().split('\n').sort();
+  assert.deepStrictEqual(files, [path.join(gRoot, 'foo.html'), path.join(gRoot, 'sub', 'foo.html')]);
+});
+
 check('-n columns count bytes, not code units (vim %c)', () => {
   // 'ééé' is 3 chars / 6 UTF-8 bytes: <span starts at byte 9 → col 10.
   const { stdout } = run(['#t', '-n'], { input: '<p>ééé<span id=t>x</span></p>' });
