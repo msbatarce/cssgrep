@@ -781,6 +781,28 @@ check('trailing --attr without a value: exit 2, not silently ignored', () => {
   assert.strictEqual(status, 2);
 });
 
+check('-n columns count bytes, not code units (vim %c)', () => {
+  // 'ééé' is 3 chars / 6 UTF-8 bytes: <span starts at byte 9 → col 10.
+  const { stdout } = run(['#t', '-n'], { input: '<p>ééé<span id=t>x</span></p>' });
+  assert.strictEqual(stdout.trimEnd().split(' ')[0], '1:10');
+});
+
+check('-n columns: astral chars count their UTF-8 bytes', () => {
+  // '😀' is 4 UTF-8 bytes (2 code units): <span starts at byte 7 → col 8.
+  const { stdout } = run(['#t', '-n'], { input: '<p>😀<span id=t>x</span></p>' });
+  assert.strictEqual(stdout.trimEnd().split(' ')[0], '1:8');
+});
+
+check('--json col counts bytes too', () => {
+  const { stdout } = run(['#t', '--json'], { input: '<p>ééé<span id=t>x</span></p>' });
+  assert.strictEqual(JSON.parse(stdout).col, 10);
+});
+
+check('highlight still lands on the match after non-ASCII text', () => {
+  const { stdout } = run(['#t', '--color=always'], { input: '<p>ééé<span id=t>x</span></p>' });
+  assert.ok(stdout.includes('\x1b[1;31m<span id=t>x</span>\x1b[0m'));
+});
+
 check('large result set is not truncated through a pipe', () => {
   // Regression: process.exit() right after a big async pipe write used to drop
   // most of the output (~2.4k of 20k lines). 20k lines ≈ 500 KB, well past the

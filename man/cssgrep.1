@@ -94,7 +94,12 @@ comments and blank lines ignored), like a
 .BR \-n ", " \-\-line\-number
 Prefix each match with its
 .IR line : col
-locator. Excludes
+locator. The column counts bytes (what vim's
+.B grepformat
+.I %c
+expects), pointing at the opening
+.B <
+of the matched tag. Excludes
 .B \-c
 and
 .BR \-p .

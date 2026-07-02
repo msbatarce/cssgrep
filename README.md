@@ -206,4 +206,6 @@ a flag.)
 - [`css-select`](https://github.com/fb55/css-select) matches the selector
   against that DOM (the same engine cheerio uses).
 - Offsets are converted to 1-based `line:col` via a precomputed line index;
-  `col` points at the opening `<` of the matched tag.
+  `col` points at the opening `<` of the matched tag and counts *bytes* — what
+  vim's `grepformat` `%c` expects — so multibyte UTF-8 text earlier on the line
+  doesn't skew the cursor.

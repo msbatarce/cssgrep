@@ -314,7 +314,12 @@ function offsetToPosition(starts, src, offset) {
   if (text.endsWith('\r')) text = text.slice(0, -1);
   return {
     line: lo + 1,            // 1-based
+    // col in UTF-16 code units: a JS string index into `text`, used by the
+    // highlight math. bcol in bytes: what gets printed — vim's grepformat %c
+    // and terminals count bytes, so non-ASCII text before the match would
+    // otherwise land the cursor short.
     col: offset - lineStart + 1, // 1-based
+    bcol: Buffer.byteLength(src.slice(lineStart, offset), 'utf8') + 1, // 1-based
     text,
   };
 }
@@ -512,7 +517,7 @@ function emitContext(src, starts, name, showLabel, targets, opts, out) {
       if (label) prefix += c(COLORS.file, label) + (opts.nul ? '\0' : sepColored);
       if (opts.lineNumber) {
         prefix += c(COLORS.line, String(L));
-        prefix += m ? c(COLORS.sep, ':') + c(COLORS.line, String(m.pos.col)) + ' '
+        prefix += m ? c(COLORS.sep, ':') + c(COLORS.line, String(m.pos.bcol)) + ' '
                     : c(COLORS.sep, '-');
       }
       const body = m
@@ -579,7 +584,7 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
       out.push(JSON.stringify({
         file: name,
         line: pos.line,
-        col: pos.col,
+        col: pos.bcol,
         html: src.slice(off, nodeEnd),
         text: collapseWs(textOf(el)),
       }));
@@ -620,7 +625,7 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     let prefix = '';
     if (label) prefix += c(COLORS.file, label) + fileSep;
     if (opts.lineNumber) {
-      prefix += c(COLORS.line, String(pos.line)) + sep + c(COLORS.line, String(pos.col)) + ' ';
+      prefix += c(COLORS.line, String(pos.line)) + sep + c(COLORS.line, String(pos.bcol)) + ' ';
     }
     out.push(prefix + text);
   }
