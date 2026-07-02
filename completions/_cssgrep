@@ -12,6 +12,7 @@ _cssgrep() {
     '*'{-i,--ignore}'[skip files/dirs matching glob while recursing]:glob:' \
     '*--exclude[alias for --ignore]:glob:' \
     '--ignore-file[read ignore globs from a file]:file:_files' \
+    '(-S --follow)'{-S,--follow}'[follow symbolic links while recursing]' \
     '(-n --line-number)'{-n,--line-number}'[prefix each match with line:col]' \
     '(-p --print)'{-p,--print}'[pretty-print the matched node HTML]' \
     '--attr[print the value of an attribute]:attribute name:' \

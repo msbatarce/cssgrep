@@ -8,6 +8,7 @@ complete -c cssgrep -l include -x -d 'Only search files matching glob (replaces 
 complete -c cssgrep -s i -l ignore -x -d 'Skip files/dirs matching glob while recursing'
 complete -c cssgrep -l exclude -x -d 'Alias for --ignore'
 complete -c cssgrep -l ignore-file -r -F -d 'Read ignore globs from a file'
+complete -c cssgrep -s S -l follow -d 'Follow symbolic links while recursing'
 complete -c cssgrep -s n -l line-number -d 'Prefix each match with line:col'
 complete -c cssgrep -s p -l print -d 'Pretty-print the matched node HTML'
 complete -c cssgrep -l attr -x -d 'Print the value of an attribute'

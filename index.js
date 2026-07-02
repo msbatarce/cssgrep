@@ -35,6 +35,8 @@ Options:
   -i, --ignore <glob>    Skip files/dirs matching <glob> when recursing (repeatable).
       --exclude <glob>   Alias for --ignore.
       --ignore-file <path>   Read ignore globs from <path> (one per line, # comments).
+  -S, --follow           Follow symbolic links when recursing with -r
+                         (default: skip them; loops are detected).
   -n, --line-number      Prefix each match with its line:col (excludes -c, -p).
   -p, --print            Pretty-print the matched node's HTML above its location.
       --attr <name>      Print the value of attribute <name> (skips nodes without it).
@@ -94,6 +96,7 @@ function parseArgs(argv) {
     positionals: [],
     paths: [],
     recursive: false,
+    follow: false,
     exts: ['html', 'htm'],
     extGiven: false,
     maxDepth: 0,
@@ -170,6 +173,7 @@ function parseArgs(argv) {
         case '--help': process.stdout.write(USAGE + '\n'); process.exit(0); break;
         case '--version': process.stdout.write(`cssgrep ${VERSION}\n`); process.exit(0); break;
         case '--recursive': opts.recursive = true; break;
+        case '--follow': opts.follow = true; break;
         case '--line-number': opts.lineNumber = true; break;
         case '--print': opts.print = true; break;
         case '--count': opts.count = true; break;
@@ -218,6 +222,7 @@ function parseArgs(argv) {
           case 'h': process.stdout.write(USAGE + '\n'); process.exit(0); break;
           case 'V': process.stdout.write(`cssgrep ${VERSION}\n`); process.exit(0); break;
           case 'r': opts.recursive = true; break;
+          case 'S': opts.follow = true; break;
           case 'n': opts.lineNumber = true; break;
           case 'p': opts.print = true; break;
           case 'c': opts.count = true; break;
@@ -709,7 +714,14 @@ function matchesAny(name, full, isDir, matchers) {
   return false;
 }
 
-function* walk(dir, opts, depth = 1) {
+// `visited` (only with -S/--follow) holds the realpath of every directory
+// already entered, so symlink cycles — and two links to the same physical
+// directory — are traversed once. Without --follow, symlinks are skipped.
+function* walk(dir, opts, depth = 1, visited = null) {
+  if (opts.follow && visited === null) {
+    visited = new Set();
+    try { visited.add(fs.realpathSync(dir)); } catch (e) { /* walked anyway */ }
+  }
   let entries;
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -719,12 +731,25 @@ function* walk(dir, opts, depth = 1) {
   }
   for (const e of entries) {
     const full = path.join(dir, e.name);
-    const isDir = e.isDirectory();
+    let isDir = e.isDirectory();
+    let isFile = e.isFile();
+    if (opts.follow && e.isSymbolicLink()) {
+      const st = fs.statSync(full, { throwIfNoEntry: false }); // resolves the link
+      if (!st) continue;                                       // broken link
+      isDir = st.isDirectory();
+      isFile = st.isFile();
+    }
     if (opts.ignore.length && matchesAny(e.name, full, isDir, opts.ignore)) continue;
     if (isDir) {
+      if (opts.follow) {
+        let real;
+        try { real = fs.realpathSync(full); } catch (err) { continue; }
+        if (visited.has(real)) continue;    // cycle or already-walked dir
+        visited.add(real);
+      }
       // --max-depth caps how far we descend; depth 1 = the target's children.
-      if (!opts.maxDepth || depth < opts.maxDepth) yield* walk(full, opts, depth + 1);
-    } else if (e.isFile()) {
+      if (!opts.maxDepth || depth < opts.maxDepth) yield* walk(full, opts, depth + 1, visited);
+    } else if (isFile) {
       // --include replaces the extension filter; otherwise filter by --ext.
       if (opts.include.length) {
         if (matchesAny(e.name, full, false, opts.include)) yield full;

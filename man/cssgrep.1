@@ -91,6 +91,12 @@ one per line
 comments and blank lines ignored), like a
 .IR .gitignore .
 .TP
+.BR \-S ", " \-\-follow
+Follow symbolic links while recursing with
+.B \-r
+(they are skipped by default). Each physical directory is visited once, so
+symlink cycles are safe.
+.TP
 .BR \-n ", " \-\-line\-number
 Prefix each match with its
 .IR line : col

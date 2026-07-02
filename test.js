@@ -782,6 +782,38 @@ check('trailing --attr without a value: exit 2, not silently ignored', () => {
   assert.strictEqual(status, 2);
 });
 
+// --follow fixtures need symlink support (unavailable on Windows CI without
+// developer mode); skip these checks rather than fail there.
+const symRoot = path.join(tmp, 'symtest');
+let symlinksOk = true;
+try {
+  fs.mkdirSync(path.join(symRoot, 'real'), { recursive: true });
+  fs.writeFileSync(path.join(symRoot, 'real', 'a.html'), '<p class="s">x</p>');
+  fs.symlinkSync(path.join('real', 'a.html'), path.join(symRoot, 'link.html'), 'file');
+  fs.symlinkSync('real', path.join(symRoot, 'linkdir'), 'dir');
+  fs.symlinkSync('..', path.join(symRoot, 'real', 'loop'), 'dir');   // cycle
+} catch (e) {
+  symlinksOk = false;
+}
+
+if (symlinksOk) {
+  check('-r skips symlinks by default', () => {
+    const { stdout } = run(['p.s', '-r', '-l', symRoot]);
+    assert.deepStrictEqual(stdout.trimEnd().split('\n'), [path.join(symRoot, 'real', 'a.html')]);
+  });
+
+  check('-rS follows symlinks, visits each physical dir once, survives cycles', () => {
+    const { stdout, status } = run(['p.s', '-rS', '-l', symRoot]);
+    assert.strictEqual(status, 0);
+    const files = stdout.trimEnd().split('\n');
+    // link.html plus exactly one path into the physical `real` dir (whichever
+    // of real/ or linkdir/ the walk reached first); the `loop` symlink back to
+    // the root must not recurse forever or duplicate anything.
+    assert.strictEqual(files.length, 2);
+    assert.ok(files.includes(path.join(symRoot, 'link.html')));
+  });
+}
+
 check('-c prints zero counts per file, grep-style', () => {
   // fMin has no div.a; it must still report min.html:0 (exit 0: fMulti matched).
   const { stdout, status } = run(['div.a', '-c', fMulti, fMin]);

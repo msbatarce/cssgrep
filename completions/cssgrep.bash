@@ -6,7 +6,7 @@ _cssgrep() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    opts="-r --recursive --max-depth --ext --include -i --ignore --exclude --ignore-file -n --line-number \
+    opts="-r --recursive --max-depth --ext --include -i --ignore --exclude --ignore-file -S --follow -n --line-number \
 -p --print --attr --text --json --parent -w --max-width \
 -A --after-context -B --before-context -C --context \
 -m --max-count -M --max-total -c --count \
