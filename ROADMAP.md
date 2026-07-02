@@ -22,6 +22,9 @@ globs with brace alternation (`{a,b,c}`), and `--max-depth`. Plus CI hardening
 (3-OS × 2-Node test matrix, npm publish provenance, binary smoke test) and repo
 scaffolding (issue/PR templates, editorconfig).
 
+**v1.2 (correctness & fidelity round): planned — see Phase 5 below.** Bugs
+found in a 2026-07-02 code audit, plus grep-parity deviations decided that day.
+
 ## Output-mode model (design backbone)
 
 New flags compose cleanly only as three independent axes; place each feature on
@@ -116,6 +119,64 @@ Most involved; refactors the line-output path.
   `startIndex`.
 
 ---
+
+## Phase 5 — Correctness & fidelity round (v1.2)
+
+Fixes from the 2026-07-02 audit. Ordered by severity; each item is one commit
+(code + tests + docs, suite green). Behavior decisions (column unit, `--color`,
+`-c` zeros, symlinks) were made 2026-07-02 and are baked into the items below.
+
+1. **Flush-safe exit — never truncate piped output.** `main` ends with one big
+   `process.stdout.write(...)` immediately followed by `process.exit(...)`;
+   pipe writes are async in Node, so large output is cut off (observed: 200k
+   matches → ~2.4k lines through a pipe). Set `process.exitCode` and return
+   instead of calling `process.exit`. Test: a generated many-match file must
+   come through a pipe complete.
+
+2. **Missing option values fail cleanly.** A value-taking flag with no value
+   must `fail("option X requires a value")` (exit 2). Today `--ignore`/`-i` as
+   the last arg crashes with a `TypeError` stack trace (exit 1), and a bare
+   trailing `--attr` is *silently ignored* (`undefined` fails the `!= null`
+   check). Hook the check into the long-option `value()` helper and the
+   short-cluster value path.
+
+3. **Byte-accurate columns.** `-n` and `--json` report the column in UTF-16
+   code units — wrong for vim (`grepformat` `%c` is bytes) and not characters
+   either (astral chars count 2). Report byte columns:
+   `Buffer.byteLength(<line prefix>)` + 1 at emit time. The in-line highlight
+   math stays code-unit based internally (it slices JS strings). Update the
+   column-semantics wording in README + man ("byte column, as vim expects").
+
+4. **`**` glob segment boundary.** `--include '**/foo.html'` compiles to
+   `.*foo\.html` and wrongly matches `barfoo.html`. Compile `**/` to
+   `(?:.*/)?` so `**` crosses whole segments only.
+
+5. **`--attr` fidelity.** (a) htmlparser2 lowercases HTML attribute names, so
+   `--attr HREF` can never match — lowercase the flag value in `parseArgs`.
+   (b) `searchSource` returns the selector-match count even when every node was
+   skipped for lacking the attribute, so `--attr` can print nothing yet exit 0;
+   return the *emitted* record count from the per-target loop (also makes the
+   `-M` budget count printed records).
+
+6. **Bare `--color` means `auto` (grep parity).** Today a bare `--color` forces
+   `always`; GNU grep treats it as `auto`. Match grep; `--color=always` remains
+   for forcing color into pipes. Update USAGE/README/man.
+
+7. **`-c` prints zero counts (grep parity).** Multi-file `-c` prints `file:0`
+   for files without matches; single file/stdin prints `0`. Exit status still 1
+   when nothing matched, exactly like grep.
+
+8. **`-S`/`--follow` — follow symlinks under `-r`.** Today `-r` silently skips
+   symlinked files and dirs. Add `-S`/`--follow` (off by default, ripgrep's
+   model) that follows symlinks while recursing, with a visited-realpath set to
+   guard against loops. Document the default. All four doc surfaces + the three
+   completion files.
+
+9. **Small robustness fixes** (one commit): surrogate-safe `-w` truncation
+   (never slice an astral char in half → invalid output bytes); apply the
+   binary sniff to stdin, not just files; sort `walk()` entries so multi-file
+   output order is deterministic across platforms; document how `-M` composes
+   with `-l`/`-L` (the budget counts matches, not files).
 
 ## Files touched (most phases)
 
