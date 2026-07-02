@@ -805,8 +805,11 @@ function main() {
   }
   // Normally success means "a match was found". With -L it means "a file
   // without a match was printed", which is decoupled from the match total.
+  // Set exitCode rather than calling process.exit(): stdout writes to a pipe
+  // are async, and exit() would drop whatever hasn't flushed yet, truncating
+  // large result sets mid-stream.
   const success = opts.filesWithoutMatch ? out.length > 0 : total > 0;
-  process.exit(success ? 0 : 1);
+  process.exitCode = success ? 0 : 1;
 }
 
 main();

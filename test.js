@@ -763,6 +763,17 @@ check('-n with -p: exit status 2 (mutually exclusive)', () => {
   assert.strictEqual(status, 2);
 });
 
+check('large result set is not truncated through a pipe', () => {
+  // Regression: process.exit() right after a big async pipe write used to drop
+  // most of the output (~2.4k of 20k lines). 20k lines ≈ 500 KB, well past the
+  // 64 KB pipe buffer.
+  const fBig = path.join(tmp, 'big.html');
+  fs.writeFileSync(fBig, '<html><body>\n' + '<p class="many">hello</p>\n'.repeat(20000) + '</body></html>\n');
+  const { stdout, status } = run(['p.many', fBig]);
+  assert.strictEqual(status, 0);
+  assert.strictEqual(stdout.trimEnd().split('\n').length, 20000);
+});
+
 // --- teardown ---------------------------------------------------------------
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(failures ? `\n${failures} test(s) failed` : '\nall tests passed');
