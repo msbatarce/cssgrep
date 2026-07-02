@@ -763,6 +763,24 @@ check('-n with -p: exit status 2 (mutually exclusive)', () => {
   assert.strictEqual(status, 2);
 });
 
+check('trailing --ignore without a value: clean exit 2, no stack trace', () => {
+  // Regression: used to crash with a TypeError (exit 1) in compileIgnore.
+  const { status } = run(['div.a', '--ignore'], { input: multiline, expectStatus: 2 });
+  assert.strictEqual(status, 2);
+});
+
+check('trailing -i without a value: clean exit 2', () => {
+  const { status } = run(['div.a', '-i'], { input: multiline, expectStatus: 2 });
+  assert.strictEqual(status, 2);
+});
+
+check('trailing --attr without a value: exit 2, not silently ignored', () => {
+  // Regression: opts.attr became undefined, which the != null check read as
+  // "no --attr given", silently switching output modes.
+  const { status } = run(['div.a', '--attr'], { input: multiline, expectStatus: 2 });
+  assert.strictEqual(status, 2);
+});
+
 check('large result set is not truncated through a pipe', () => {
   // Regression: process.exit() right after a big async pipe write used to drop
   // most of the output (~2.4k of 20k lines). 20k lines ≈ 500 KB, well past the

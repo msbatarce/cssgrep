@@ -158,7 +158,11 @@ function parseArgs(argv) {
       const eq = a.indexOf('=');
       const name = eq === -1 ? a : a.slice(0, eq);
       const inline = eq === -1 ? null : a.slice(eq + 1);
-      const value = () => (inline != null ? inline : argv[++i]);
+      const value = () => {
+        if (inline != null) return inline;
+        if (i + 1 >= argv.length) fail(`option ${name} requires a value`);
+        return argv[++i];
+      };
       switch (name) {
         case '--help': process.stdout.write(USAGE + '\n'); process.exit(0); break;
         case '--version': process.stdout.write(`cssgrep ${VERSION}\n`); process.exit(0); break;
@@ -202,6 +206,7 @@ function parseArgs(argv) {
         const ch = a[j];
         if (shortValueFlags[ch]) {
           const rest = a.slice(j + 1);          // attached value, if any
+          if (rest === '' && i + 1 >= argv.length) fail(`option -${ch} requires a value`);
           shortValueFlags[ch](rest !== '' ? rest : argv[++i]);
           break;                                // value swallowed the cluster tail
         }
