@@ -782,6 +782,13 @@ check('trailing --attr without a value: exit 2, not silently ignored', () => {
   assert.strictEqual(status, 2);
 });
 
+check('bare --color means auto: no escapes when stdout is a pipe', () => {
+  // grep parity — a bare --color used to force color on.
+  const { stdout, status } = run(['div.a', '--color'], { input: multiline });
+  assert.strictEqual(status, 0);
+  assert.ok(!stdout.includes('\x1b['), 'expected no ANSI escapes through a pipe');
+});
+
 check('--attr matches attribute names case-insensitively', () => {
   // htmlparser2 lowercases attribute names; --attr HREF used to never match.
   const { stdout, status } = run(['a', '--attr', 'HREF'], { input: '<a HREF="x.html">l</a>' });

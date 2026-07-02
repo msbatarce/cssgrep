@@ -55,7 +55,8 @@ Options:
   -0, --null             Separate the file name with a NUL byte (for xargs -0).
   -H, --with-filename    Always print the file name prefix (even for one file).
       --no-filename      Never print the file name prefix (even for many files).
-      --color[=<when>]   Colorize output: auto (default), always or never.
+      --color[=<when>]   Colorize output: auto (default, also what a bare
+                         --color means, like grep), always or never.
   -h, --help             Show this help.
   -V, --version          Show version and exit.
 
@@ -153,7 +154,8 @@ function parseArgs(argv) {
     const a = argv[i];
 
     // Long options: --name or --name=value. A missing inline value is taken
-    // from the next argument (except --color, where a bare flag means "always").
+    // from the next argument (except --color, where a bare flag means "auto",
+    // as in GNU grep).
     if (a.startsWith('--') && a.length > 2) {
       const eq = a.indexOf('=');
       const name = eq === -1 ? a : a.slice(0, eq);
@@ -193,7 +195,7 @@ function parseArgs(argv) {
         case '--after-context': setAfter(value()); break;
         case '--before-context': setBefore(value()); break;
         case '--context': setContext(value()); break;
-        case '--color': case '--colour': opts.color = inline != null ? inline : 'always'; break;
+        case '--color': case '--colour': opts.color = inline != null ? inline : 'auto'; break;
         default: fail(`unknown option: ${name}`);
       }
       continue;
