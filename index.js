@@ -713,11 +713,13 @@ function compileIgnore(pattern) {
 }
 
 // True if name/path matches any compiled glob matcher (shared by --ignore/
-// --exclude and --include).
+// --exclude and --include). Globs always use `/` as the separator (gitignore
+// semantics), so normalize Windows backslash paths before matching.
 function matchesAny(name, full, isDir, matchers) {
+  const fullPosix = path.sep === '/' ? full : full.split(path.sep).join('/');
   for (const m of matchers) {
     if (m.dirOnly && !isDir) continue;
-    if (m.re.test(m.hasSlash ? full : name)) return true;
+    if (m.re.test(m.hasSlash ? fullPosix : name)) return true;
   }
   return false;
 }
