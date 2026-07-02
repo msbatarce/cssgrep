@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-02
+
 ### Added
 - `-H`/`--with-filename` and `--no-filename` to force the `file:` prefix on or off.
 - `-s`/`--no-messages` to suppress errors for unreadable or missing files.
@@ -32,5 +34,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `-0`/`--null`, `--color`, `-w`/`--max-width`, `-V`/`--version`.
 - Standalone binaries (Bun, Node SEA), shell completions, and a man page.
 
-[Unreleased]: https://github.com/msbatarce/cssgrep/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/msbatarce/cssgrep/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/msbatarce/cssgrep/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/msbatarce/cssgrep/releases/tag/v1.0.0
