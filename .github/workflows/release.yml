@@ -1,27 +1,28 @@
 name: release
 
-# Build standalone binaries and cut a GitHub Release whenever a vX.Y.Z tag is
-# pushed. npm publishing is opt-in: it only runs if an NPM_TOKEN secret is set.
+# Build standalone binaries, cut a GitHub Release, and publish to npm whenever a
+# vX.Y.Z tag is pushed. npm auth uses OIDC trusted publishing (no token secret) —
+# configure the repo as a trusted publisher for this workflow on npmjs.com.
 on:
   push:
     tags:
       - 'v*'
 
 permissions:
-  contents: write
-  id-token: write   # OIDC for npm publish provenance
+  contents: write   # create the GitHub Release
+  id-token: write   # OIDC token for npm trusted publishing (+ provenance)
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    env:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           registry-url: 'https://registry.npmjs.org'
+      # Trusted publishing needs npm >= 11.5.1; Node bundles an older npm.
+      - run: npm install -g npm@latest
       - uses: oven-sh/setup-bun@v2
       - run: npm ci
       - run: npm test
@@ -46,9 +47,7 @@ jobs:
             dist/cssgrep-*
             dist/SHA256SUMS.txt
           generate_release_notes: true
-      # Opt-in: set the NPM_TOKEN repository secret to publish to npm on tag.
-      - name: Publish to npm
-        if: ${{ env.NPM_TOKEN != '' }}
+      # Authenticates via OIDC — no token needed. Requires the repo to be
+      # registered as a trusted publisher for release.yml on npmjs.com.
+      - name: Publish to npm (OIDC trusted publishing)
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
