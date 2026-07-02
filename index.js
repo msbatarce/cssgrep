@@ -185,7 +185,8 @@ function parseArgs(argv) {
         case '--max-count': setMaxCount(value()); break;
         case '--max-total': setMaxTotal(value()); break;
         case '--max-depth': setMaxDepth(value()); break;
-        case '--attr': opts.attr = value(); break;
+        // htmlparser2 lowercases HTML attribute names, so match case-insensitively.
+        case '--attr': opts.attr = value().toLowerCase(); break;
         case '--text': opts.text = true; break;
         case '--json': opts.json = true; break;
         case '--parent': setParent(value()); break;
@@ -573,6 +574,10 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     emitContext(src, starts, name, showLabel, targets, opts, out);
     return limited.length;
   }
+  // From here on the return value is the number of *emitted* records (which is
+  // what the -M budget and the exit status should count): --attr can skip
+  // matches lacking the attribute, and --parent dedup can merge several
+  // matches into one printed ancestor.
   if (opts.json) {
     // NDJSON: one self-contained record per match. `html` is the exact source
     // slice; newlines are escaped by JSON.stringify, so each record stays on
@@ -589,13 +594,15 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
         text: collapseWs(textOf(el)),
       }));
     }
-    return limited.length;
+    return targets.length;
   }
+  let emitted = 0;
   for (const el of targets) {
     if (opts.print) {
       // -p shows the re-indented node only; no line:col locator. With --parent,
       // the original matched descendants are highlighted inside the container.
       out.push(prettyPrint(el, originsByTarget.get(el), opts), ''); // blank separator
+      emitted++;
       continue;
     }
     const off = el.startIndex == null ? 0 : el.startIndex;
@@ -628,8 +635,9 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
       prefix += c(COLORS.line, String(pos.line)) + sep + c(COLORS.line, String(pos.bcol)) + ' ';
     }
     out.push(prefix + text);
+    emitted++;
   }
-  return limited.length;
+  return emitted;
 }
 
 // Translate a glob to a regex body. `*` matches within a path segment, `**`

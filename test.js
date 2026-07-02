@@ -430,10 +430,11 @@ check('--parent dedups a shared ancestor', () => {
 });
 
 check('--parent clamps at the document root', () => {
-  // climbing far past the root just yields the top element, no crash
-  const { stdout, status } = run(['p.x', '--parent', '99', '--attr', 'class'], { input: nested });
-  assert.strictEqual(status, 0);
-  // the <section> (top element) has no class attribute, so nothing prints
+  // climbing far past the root just yields the top element, no crash. The
+  // <section> (top element) has no class attribute, so nothing prints — and
+  // since nothing was emitted, the exit status is 1.
+  const { stdout, status } = run(['p.x', '--parent', '99', '--attr', 'class'], { input: nested, expectStatus: 1 });
+  assert.strictEqual(status, 1);
   assert.strictEqual(stdout, '');
 });
 
@@ -779,6 +780,20 @@ check('trailing --attr without a value: exit 2, not silently ignored', () => {
   // "no --attr given", silently switching output modes.
   const { status } = run(['div.a', '--attr'], { input: multiline, expectStatus: 2 });
   assert.strictEqual(status, 2);
+});
+
+check('--attr matches attribute names case-insensitively', () => {
+  // htmlparser2 lowercases attribute names; --attr HREF used to never match.
+  const { stdout, status } = run(['a', '--attr', 'HREF'], { input: '<a HREF="x.html">l</a>' });
+  assert.strictEqual(status, 0);
+  assert.strictEqual(stdout.trimEnd(), 'x.html');
+});
+
+check('--attr with every match skipped: no output, exit 1', () => {
+  // Regression: selector matches counted as "found" even when nothing printed.
+  const { stdout, status } = run(['a', '--attr', 'href'], { input: '<a>no href</a>', expectStatus: 1 });
+  assert.strictEqual(status, 1);
+  assert.strictEqual(stdout, '');
 });
 
 check('**/ glob stops at segment boundaries', () => {

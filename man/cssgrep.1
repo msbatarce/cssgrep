@@ -112,7 +112,8 @@ locator is shown.
 .BI \-\-attr " name"
 Print the value of attribute
 .I name
-for each match (nodes without it are skipped).
+for each match (nodes without it are skipped; if every match is skipped the
+exit status is 1). The name is matched case-insensitively.
 .TP
 .B \-\-text
 Print the matched node's text content, whitespace collapsed.

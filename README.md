@@ -85,7 +85,7 @@ locator appears only with `-n`:
 | `--ignore-file <path>` | Load ignore globs from a file, one per line (`#` comments and blank lines ignored) — like a `.gitignore`. |
 | `-n`, `--line-number` | Prefix each match with its `line:col` locator. Mutually exclusive with `-c` and `-p`. |
 | `-p`, `--print` | Pretty-print the matched node's HTML, re-indented from scratch (works on minified input). No `line:col` locator is shown. |
-| `--attr <name>` | Print the value of attribute `<name>` for each match (nodes without it are skipped). Honors `-n` and `-w`. |
+| `--attr <name>` | Print the value of attribute `<name>` for each match (nodes without it are skipped; if every match is skipped the exit status is 1). The name is matched case-insensitively. Honors `-n` and `-w`. |
 | `--text` | Print the matched node's text content, whitespace collapsed. Honors `-n` and `-w`. |
 | `--json` | Print one JSON object per match (NDJSON), with `file`, `line`, `col`, `html`, `text`. |
 | `--parent <n>` | Report the `n`-th element ancestor of each match instead of the match itself (de-duplicated). Pairs well with `-p`. |
