@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-02
+
 ### Added
 - `-S`/`--follow` to follow symbolic links while recursing with `-r`
   (skipped by default). Cycle-safe: each physical directory is visited once.
@@ -25,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   them), and exits 1 when every match was skipped for lacking the attribute.
 - `-w`/`--max-width` no longer cuts an astral character in half.
 - Binary detection now also applies to standard input.
+- Slash-containing globs (e.g. `--include 'src/*.html'`) now match on Windows:
+  paths are normalized to `/` separators before glob matching.
 - Recursive walks visit directory entries in sorted order, so output order is
   deterministic across platforms.
 
@@ -60,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `-0`/`--null`, `--color`, `-w`/`--max-width`, `-V`/`--version`.
 - Standalone binaries (Bun, Node SEA), shell completions, and a man page.
 
-[Unreleased]: https://github.com/msbatarce/cssgrep/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/msbatarce/cssgrep/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/msbatarce/cssgrep/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/msbatarce/cssgrep/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/msbatarce/cssgrep/releases/tag/v1.0.0

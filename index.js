@@ -12,7 +12,7 @@ const { html: beautify } = require('js-beautify');
 // package.json, so it survives compilation into a standalone binary (Bun
 // --compile / Node SEA), where package.json won't sit next to the executable.
 // Keep in sync with package.json on release.
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 
 const USAGE = `cssgrep - search HTML by CSS selector, grep-style.
 
