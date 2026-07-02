@@ -22,8 +22,9 @@ globs with brace alternation (`{a,b,c}`), and `--max-depth`. Plus CI hardening
 (3-OS × 2-Node test matrix, npm publish provenance, binary smoke test) and repo
 scaffolding (issue/PR templates, editorconfig).
 
-**v1.2 (correctness & fidelity round): planned — see Phase 5 below.** Bugs
-found in a 2026-07-02 code audit, plus grep-parity deviations decided that day.
+**v1.2 (correctness & fidelity round): implemented 2026-07-02 — see Phase 5
+below.** Bugs found in a 2026-07-02 code audit, plus grep-parity deviations
+decided that day. All nine items shipped, one commit each.
 
 ## Output-mode model (design backbone)
 

@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `-S`/`--follow` to follow symbolic links while recursing with `-r`
+  (skipped by default). Cycle-safe: each physical directory is visited once.
+
+### Fixed
+- Large result sets are no longer truncated when stdout is a pipe (the process
+  exited before async pipe writes had flushed).
+- Columns (`-n`, `-A`/`-B`/`-C`, `--json`) now count bytes — what vim's
+  `grepformat %c` expects — instead of UTF-16 code units, so non-ASCII text
+  before a match no longer skews the locator.
+- A value-taking option with no value (e.g. a trailing `--ignore` or `--attr`)
+  now fails cleanly with exit 2 instead of crashing or being silently ignored.
+- `**/` in globs stops at path-segment boundaries: `--include '**/foo.html'`
+  no longer matches `barfoo.html`.
+- `--attr` matches attribute names case-insensitively (the parser lowercases
+  them), and exits 1 when every match was skipped for lacking the attribute.
+- `-w`/`--max-width` no longer cuts an astral character in half.
+- Binary detection now also applies to standard input.
+- Recursive walks visit directory entries in sorted order, so output order is
+  deterministic across platforms.
+
+### Changed
+- Bare `--color` now means `auto`, matching GNU grep (was `always`).
+- `-c` prints zero counts (`file:0`, or a lone `0` for a single input),
+  matching grep.
+
 ## [1.1.0] - 2026-07-02
 
 ### Added
