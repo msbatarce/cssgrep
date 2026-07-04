@@ -162,6 +162,26 @@ ancestors are de-duplicated, so `cssgrep '.price' --parent 1 -p` prints each
 containing card once. It composes with every print mode (`-p`, `--attr`,
 `--text`, `--json`, or the default line output).
 
+### Inverting matches (why there's no `-v`)
+
+grep needs `-v` because a regex can't say "lines *not* matching". CSS can:
+`:not()` — including full complex selectors and selector lists, plus `:has()`
+for descendant conditions — expresses every inversion directly in the
+selector, scoped to the elements you actually care about:
+
+```sh
+cssgrep 'img:not([alt])' -rn .          # accessibility: images missing alt text
+cssgrep 'div.card:not(:has(a))' page.html   # cards that contain no link
+cssgrep 'a:not(nav a, footer a)' page.html  # links outside chrome
+cssgrep 'input:not([type=hidden])' -c form.html  # count the visible inputs
+```
+
+A flag-level `-v` would need its own answer to "*which* non-matching
+elements?" — bare inversion (`:not(a)`) matches nearly every element in the
+document — so the selector, which already names the universe on the left of
+`:not()`, is both shorter and standard CSS. For whole files without a match,
+use `-L`.
+
 ## Vim / Neovim integration
 
 The `file:line:col text` format produced by `-n` is `:grep`-compatible. Point

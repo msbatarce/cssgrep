@@ -6,8 +6,8 @@ grep-family flags plus HTML-specific capabilities plain grep can't offer.
 **Process:** implement in phase order. **Each feature is its own commit** (code +
 tests + docs, suite green) — see `CLAUDE.md`. Phases are independently shippable.
 
-**Status: Phases 0–6 are implemented; Phases 7–11 are planned (v1.3+), with
-design decisions open.** Phases 0–4 shipped:
+**Status: Phases 0–7 are done (7 resolved as "no flag" — see below); Phases
+8–11 are planned (v1.3+), with design decisions open.** Phases 0–4 shipped:
 `-m`, `-l`/`-L`/`-q`, `--attr`/`--text`, `--json`, `-0`/`--null`, `--parent`,
 and `-A`/`-B`/`-C`. This file is kept as the design record; future work can
 extend it.
@@ -220,7 +220,7 @@ repo) and other tools can consume the engine programmatically. Before this,
 - **Module format: CJS only**, matching the repo; ESM consumers use Node's
   CJS interop. No build step, hand-written `index.d.ts` for types.
 
-## Phase 7 — `-v`/`--invert-match`: use-case analysis → decision
+## Phase 7 — `-v`/`--invert-match`: use-case analysis → decision — decided 2026-07-04
 
 An analysis item, not an implementation item: CSS may already cover inversion.
 `css-select@7` supports `:not()` **and `:has()`**, so the classic asks are
@@ -233,20 +233,20 @@ expressible today:
   *imgs with no alt*) → `div:not(:has(a))`, `img:not([alt])`.
 - "matches of A except those inside B" → `A:not(B A)`.
 
-Candidate outcomes, pick one:
+**Decision: (a) — no flag.** Verified empirically against the shipped
+css-select: `:has()` works, and `:not()` accepts complex selectors *and
+selector lists* (`a:not(nav a, footer a)`), so every use case above is
+expressible directly in the selector — which also names the inversion
+universe on the left of `:not()`, the thing a flag would have to reinvent
+(bare `:not(a)` matches nearly every element in the document). Shipped as an
+"Inverting matches" recipe section in README + man, with `check(...)` cases
+pinning each recipe so the docs can't silently rot.
 
-- **(a)** Don't add the flag. Add an "Inverting matches" recipe section to
-  README + man (`:not`, `:has`, `[attr]` patterns). Zero semantic murk.
-- **(b)** Add `-v` as sugar: apply the selector, emit the *complement within a
-  chosen universe* — requires a universe/scope definition.
-
-**Design questions:**
-- Is there any concrete use case `:not()`/`:has()` cannot express? (This
-  decides a vs b.)
-- If (b): what is the inversion universe — all elements, or a second
-  `--within <sel>` scope?
-- If (b): how does `-v` interact with the aggregate axis (`-c -v`, `-l -v`)
-  and with `--parent`?
+Rejected alternative, kept for the record in case a concrete use case
+`:not()`/`:has()` cannot express ever appears: **(b)** `-v` as sugar — apply
+the selector, emit the complement within a universe named by a second
+`--within <sel>` scope; would also need semantics for `-c -v`/`-l -v` and
+`--parent`.
 
 ## Phase 8 — Multiple selectors with labels (`-e`)
 

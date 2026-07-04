@@ -255,6 +255,25 @@ Recurse a tree, skipping vendored files:
 .TP
 Extract attribute values for scripting:
 .B cssgrep \-\-attr href "a.external" page.html
+.SH INVERTING MATCHES
+There is no
+.B \-v
+flag: CSS expresses inversion in the selector itself via
+.BR :not() " (complex selectors and selector lists included) and " :has() ,
+scoped to the elements of interest \(em a flag would have to invent its own
+answer to \(lqwhich non-matching elements?\(rq.
+.TP
+Images missing alt text:
+.B cssgrep \(dqimg:not([alt])\(dq \-rn .
+.TP
+Cards containing no link:
+.B cssgrep \(dqdiv.card:not(:has(a))\(dq page.html
+.TP
+Links outside nav and footer:
+.B cssgrep \(dqa:not(nav a, footer a)\(dq page.html
+.PP
+For whole files without any match, use
+.BR \-L .
 .SH VIM INTEGRATION
 Wire
 .B cssgrep

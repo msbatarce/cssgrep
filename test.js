@@ -916,6 +916,35 @@ check('-r walks in sorted order for deterministic output', () => {
   assert.deepStrictEqual(stdout.trimEnd().split('\n'), [fMulti, fNested]);
 });
 
+// --- inversion recipes --------------------------------------------------------
+// There is deliberately no -v flag; the README/man document :not()/:has()
+// recipes instead (see ROADMAP Phase 7). These pin the recipes to shipped
+// css-select behavior so the docs can't silently rot.
+const invHtml = [
+  '<body>',
+  '<nav><a href="/home">home</a></nav>',
+  '<div class="card"><a href="/x">buy</a></div>',
+  '<div class="card"><span>no link</span></div>',
+  '<img src="a.png" alt="ok"><img src="b.png">',
+  '<footer><a href="/legal">legal</a></footer>',
+  '</body>',
+].join('\n');
+
+check('recipe: img:not([alt]) finds images missing alt', () => {
+  const { stdout } = run(['img:not([alt])', '--attr', 'src'], { input: invHtml });
+  assert.strictEqual(stdout.trimEnd(), 'b.png');
+});
+
+check('recipe: :not(:has(...)) finds containers lacking a descendant', () => {
+  const { stdout } = run(['div.card:not(:has(a))', '--text'], { input: invHtml });
+  assert.strictEqual(stdout.trimEnd(), 'no link');
+});
+
+check('recipe: :not() takes a selector list with complex selectors', () => {
+  const { stdout } = run(['a:not(nav a, footer a)', '--text'], { input: invHtml });
+  assert.strictEqual(stdout.trimEnd(), 'buy');
+});
+
 // --- library API (lib.js) ----------------------------------------------------
 // The lib is consumed in-process: require('cssgrep') must expose search()
 // without executing the CLI (which is what the old index.js did on require).
