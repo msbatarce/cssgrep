@@ -1,6 +1,7 @@
 # fish completion for cssgrep. Keep in sync with the USAGE string in index.js.
 # Install: place this file in ~/.config/fish/completions/ (named cssgrep.fish).
 
+complete -c cssgrep -s e -l selector -x -d 'Add a [label=]selector (repeatable)'
 complete -c cssgrep -s r -l recursive -d 'Recurse into directory arguments'
 complete -c cssgrep -l max-depth -x -d 'Limit -r recursion depth (1 = given dir only)'
 complete -c cssgrep -l ext -x -d 'Extensions to scan with -r (comma-separated)'

@@ -13,6 +13,13 @@ cssgrep \- search HTML by CSS selector, grep-style
 .B \-r
 .IR dir ...
 .br
+.B cssgrep
+.B \-e
+.RI \(aq[ label =] sel \(aq
+.RB [ \-e
+\&...]
+.RI [ file ...]
+.br
 .B cat
 .I file.html
 | \fBcssgrep\fR \fIselector\fR
@@ -49,6 +56,31 @@ prefix is added when searching multiple files, and the
 locator appears only with
 .BR \-n .
 .SH OPTIONS
+.TP
+.BR \-e ", " \-\-selector " [\fIlabel\fR=]\fIsel\fR"
+Add a selector (repeatable). Matches from all
+.B \-e
+selectors merge into one document-order stream, each tagged
+.RI [ label ]
+in the output (and as a
+.I label
+field with
+.BR \-\-json ).
+An unlabeled selector is tagged with its own text. A label is an identifier
+before a
+.BR = ;
+a
+.B =
+outside brackets is never valid CSS, so attribute selectors like
+.I [href=x]
+are never mistaken for labels.
+.B \-m
+and
+.B \-M
+cap the merged stream, and print modes apply to every selector alike. With
+.BR \-e ,
+every positional argument is a file path, as with
+.BR "grep \-e" .
 .TP
 .BR \-r ", " \-\-recursive
 Recurse into directory arguments (defaults to the current directory if none
@@ -126,7 +158,11 @@ Print the matched node's text content, whitespace collapsed.
 .TP
 .B \-\-json
 Print one JSON object per match (NDJSON) with
-.IR file ", " line ", " col ", " html ", " text .
+.IR file ", " line ", " col ", " html ", " text
+(plus
+.I label
+with
+.BR \-e ).
 .TP
 .BI \-\-parent " n"
 Report the
@@ -255,6 +291,9 @@ Recurse a tree, skipping vendored files:
 .TP
 Extract attribute values for scripting:
 .B cssgrep \-\-attr href "a.external" page.html
+.TP
+Scrape several labeled fields in one pass:
+.B cssgrep \-e "title=h1" \-e "price=.card .price" \-\-json page.html
 .SH INVERTING MATCHES
 There is no
 .B \-v

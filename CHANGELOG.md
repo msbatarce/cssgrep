@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `-e`/`--selector [label=]<sel>` (repeatable): search several selectors in
+  one pass, each match tagged `[label]` in line mode and carrying a `label`
+  field in `--json`. Unlabeled selectors are tagged with their own text.
+  Matches merge in document order; `-m`/`-M` cap the merged stream. With
+  `-e`, positional arguments are always file paths, like `grep -e`.
 - An "Inverting matches" section in the README and man page: `:not()` (with
   selector lists) and `:has()` recipes covering what grep's `-v` does, pinned
   by tests. Decided against adding a `-v` flag — the selector already names

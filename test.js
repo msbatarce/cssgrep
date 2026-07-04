@@ -954,6 +954,59 @@ check('-v / --invert-match fail with a pointer to the :not()/:has() recipes', ()
   }
 });
 
+// --- multiple selectors (-e) --------------------------------------------------
+const multiSel = '<html><body><h1>Widget</h1><div class="card">'
+  + '<span class="price">$4.99</span><a href="/buy">buy</a></div></body></html>';
+
+check('-e: matches merge in document order, tagged [label]', () => {
+  const { stdout } = run(['-n', '-e', 'title=h1', '-e', 'price=.card .price'], { input: multiSel });
+  const lines = stdout.trimEnd().split('\n');
+  assert.strictEqual(lines.length, 2);
+  assert.ok(lines[0].startsWith('1:13 [title] '), lines[0]);
+  assert.ok(lines[1].startsWith('1:46 [price] '), lines[1]);
+});
+
+check('-e: an unlabeled selector is tagged with its own text', () => {
+  const { stdout } = run(['--text', '-e', 'h1'], { input: multiSel });
+  assert.strictEqual(stdout.trimEnd(), '[h1] Widget');
+});
+
+check('-e: a leading attribute selector is not mistaken for a label', () => {
+  const { stdout } = run(['--text', '-e', '[href]'], { input: multiSel });
+  assert.strictEqual(stdout.trimEnd(), '[[href]] buy');
+});
+
+check('-e: --json records carry the label; without -e they do not', () => {
+  const labeled = JSON.parse(run(['--json', '-e', 'price=.price'], { input: multiSel }).stdout.trim());
+  assert.strictEqual(labeled.label, 'price');
+  assert.strictEqual(labeled.text, '$4.99');
+  const plain = JSON.parse(run(['--json', '.price'], { input: multiSel }).stdout.trim());
+  assert.ok(!('label' in plain));
+});
+
+check('-e: -m caps the merged document-order stream, not each selector', () => {
+  const { stdout } = run(
+    ['--text', '-m', '2', '-e', 'title=h1', '-e', 'price=.price', '-e', 'link=a'],
+    { input: multiSel });
+  assert.deepStrictEqual(stdout.trimEnd().split('\n'), ['[title] Widget', '[price] $4.99']);
+});
+
+check('-e: a node matching two selectors emits once per selector, in -e order', () => {
+  const { stdout } = run(['--text', '-e', 'x=.price', '-e', 'y=span'], { input: multiSel });
+  assert.deepStrictEqual(stdout.trimEnd().split('\n'), ['[x] $4.99', '[y] $4.99']);
+});
+
+check('-e: --parent dedups per (ancestor, label)', () => {
+  const { stdout } = run(['--text', '-e', 'p1=.price', '-e', 'p2=a', '--parent', '1'],
+    { input: multiSel });
+  assert.deepStrictEqual(stdout.trimEnd().split('\n'), ['[p1] $4.99buy', '[p2] $4.99buy']);
+});
+
+check('-e: positionals are file paths, like grep -e', () => {
+  const { stdout } = run(['-e', 'got=div.a', '--text', fMulti]);
+  assert.deepStrictEqual(stdout.trimEnd().split('\n'), ['[got] one', '[got] three']);
+});
+
 // --- library API (lib.js) ----------------------------------------------------
 // The lib is consumed in-process: require('cssgrep') must expose search()
 // without executing the CLI (which is what the old index.js did on require).

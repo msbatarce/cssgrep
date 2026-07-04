@@ -5,6 +5,7 @@
 
 _cssgrep() {
   _arguments -s -S \
+    '*'{-e,--selector}'[add a labeled selector (repeatable)]:selector:' \
     '(-r --recursive)'{-r,--recursive}'[recurse into directory arguments]' \
     '--max-depth[limit -r recursion depth (1 = given dir only)]:depth:' \
     '--ext[extensions to scan with -r]:extensions (comma-separated):' \

@@ -8,7 +8,7 @@ const { selectAll } = require('css-select');
 const render = require('dom-serializer').default;
 const { html: beautify } = require('js-beautify');
 const {
-  lineIndex, offsetToPosition, lineTextAt, textOf, collapseWs, ancestor, retarget,
+  lineIndex, offsetToPosition, lineTextAt, textOf, collapseWs, ancestor,
 } = require('./lib.js');
 
 // Single source of truth for the version. A constant rather than a read of
@@ -22,6 +22,7 @@ const USAGE = `cssgrep - search HTML by CSS selector, grep-style.
 Usage:
   cssgrep <selector> [file ...]
   cssgrep <selector> -r <dir ...>
+  cssgrep -e '[label=]<sel>' [-e ...] [file ...]
   cat file.html | cssgrep <selector>
 
 Output (one line per match):
@@ -31,6 +32,10 @@ Output (one line per match):
   {file}:{line}:{col} {line contents}       (with -n; multiple files)
 
 Options:
+  -e, --selector <[label=]sel>   Add a selector (repeatable). Matches from all
+                         -e selectors merge in document order; each is tagged
+                         [label] (default label: the selector text itself).
+                         With -e, every positional argument is a file path.
   -r, --recursive        Recurse into directory arguments.
       --max-depth <n>    Limit -r recursion depth (1 = the given dir only).
       --ext <list>       Comma-separated extensions for -r (default: html,htm).
@@ -44,7 +49,8 @@ Options:
   -p, --print            Pretty-print the matched node's HTML above its location.
       --attr <name>      Print the value of attribute <name> (skips nodes without it).
       --text             Print the matched node's text content (whitespace collapsed).
-      --json             Print one JSON record per match (NDJSON: file,line,col,html,text).
+      --json             Print one JSON record per match (NDJSON: file,line,col,
+                         html,text; plus label with -e).
       --parent <n>       Report the n-th ancestor of each match instead (dedup'd).
   -w, --max-width <n>    Truncate the shown line to <n> columns (ellipsis added).
   -A, --after-context <n>    Print <n> source lines after each match.
@@ -88,12 +94,14 @@ function failInvert(flag) {
 }
 
 // ANSI SGR codes matching grep's default scheme: bold-red match, magenta
-// filename, green line/col numbers, cyan separators.
+// filename, green line/col numbers, cyan separators. The [label] tag from -e
+// has no grep counterpart; yellow keeps it distinct from all of the above.
 const COLORS = {
   match: '1;31',
   file: '35',
   line: '32',
   sep: '36',
+  label: '33',
 };
 
 function paint(code, str) {
@@ -103,6 +111,7 @@ function paint(code, str) {
 function parseArgs(argv) {
   const opts = {
     selector: null,
+    selectors: [],
     positionals: [],
     paths: [],
     recursive: false,
@@ -151,6 +160,16 @@ function parseArgs(argv) {
   const setAfter = v => { opts.after = boundedInt(v, '--after-context', 0); };
   const setBefore = v => { opts.before = boundedInt(v, '--before-context', 0); };
   const setContext = v => { opts.after = opts.before = boundedInt(v, '--context', 0); };
+  // -e [label=]<selector>. A `=` outside brackets never begins a *working*
+  // selector (css-what tokenizes `a=b` as an unmatchable tag named `=b`), so a
+  // leading identifier + `=` is unambiguously a label. Unlabeled selectors are
+  // tagged with their own text, so [label] and the --json `label` field are
+  // always present when -e is used.
+  const addSelector = v => {
+    const m = /^([A-Za-z_][A-Za-z0-9_-]*)=([\s\S]+)$/.exec(v);
+    if (m) opts.selectors.push({ label: m[1], selector: m[2] });
+    else opts.selectors.push({ label: v, selector: v });
+  };
   const addIgnore = v => { const c = compileIgnore(v); if (c) opts.ignore.push(c); };
   const addInclude = v => { const c = compileIgnore(v); if (c) opts.include.push(c); };
   const addIgnoreFile = v => {
@@ -162,7 +181,7 @@ function parseArgs(argv) {
   // Short flags that take a value (rest of the cluster, or the next argument).
   const shortValueFlags = {
     w: setMaxWidth, m: setMaxCount, M: setMaxTotal, A: setAfter, B: setBefore, C: setContext,
-    i: addIgnore,
+    i: addIgnore, e: addSelector,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -211,6 +230,7 @@ function parseArgs(argv) {
         case '--before-context': setBefore(value()); break;
         case '--context': setContext(value()); break;
         case '--color': case '--colour': opts.color = inline != null ? inline : 'auto'; break;
+        case '--selector': addSelector(value()); break;
         case '--invert-match': failInvert(name); break;
         default: fail(`unknown option: ${name}`);
       }
@@ -252,7 +272,9 @@ function parseArgs(argv) {
 
     opts.positionals.push(a);
   }
-  if (opts.positionals.length === 0) fail('no selector given (try --help)');
+  if (opts.positionals.length === 0 && !opts.selectors.length) {
+    fail('no selector given (try --help)');
+  }
   // Aggregate modes each suppress per-match output, so at most one may apply.
   const aggregates = [opts.count, opts.filesWithMatches, opts.filesWithoutMatch, opts.quiet]
     .filter(Boolean).length;
@@ -291,6 +313,13 @@ function parseArgs(argv) {
 // `grepprg`, which appends args in its own order). Fall back to
 // "selector is the first positional" when the split is unclear.
 function resolveSelectorAndPaths(opts) {
+  // With -e the selectors are explicit, so — like grep -e — every positional
+  // is a file path; a mistyped one is reported as unreadable, not re-guessed
+  // as a selector.
+  if (opts.selectors.length) {
+    opts.paths = opts.positionals;
+    return;
+  }
   const pos = opts.positionals;
   const onDisk = [];
   const notOnDisk = [];
@@ -431,14 +460,14 @@ function emitContext(src, starts, name, showLabel, targets, opts, out) {
   const lineCount = src.length === 0 ? 0 : (src.endsWith('\n') ? starts.length - 1 : starts.length);
 
   // Map each match line to a representative node span (the first match on it),
-  // which drives the in-line highlight when coloring.
+  // which drives the in-line highlight — and the [label] tag — when emitting.
   const info = new Map();
-  for (const el of targets) {
+  for (const { el, label: selLabel } of targets) {
     const off = el.startIndex == null ? 0 : el.startIndex;
     const pos = offsetToPosition(starts, src, off);
     if (info.has(pos.line)) continue;
     const nodeEnd = (el.endIndex == null ? off : el.endIndex) + 1;
-    info.set(pos.line, { off, nodeEnd, pos });
+    info.set(pos.line, { off, nodeEnd, pos, selLabel });
   }
 
   // Expand match lines to [L-before, L+after] windows and merge adjacent ones.
@@ -465,8 +494,9 @@ function emitContext(src, starts, name, showLabel, targets, opts, out) {
         prefix += m ? c(COLORS.sep, ':') + c(COLORS.line, String(m.pos.bcol)) + ' '
                     : c(COLORS.sep, '-');
       }
+      const tag = m && m.selLabel != null ? c(COLORS.label, `[${m.selLabel}]`) + ' ' : '';
       const body = m
-        ? renderText(m.pos, m.off, m.nodeEnd, opts)        // highlight + truncate
+        ? tag + renderText(m.pos, m.off, m.nodeEnd, opts)  // highlight + truncate
         : truncate(lineTextAt(starts, src, L).text, opts.maxWidth);
       out.push(prefix + body);
     }
@@ -481,8 +511,23 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     withStartIndices: true,
     withEndIndices: true,
   });
-  const matches = selectAll(opts.selector, dom);
-  const found = matches.length;
+  // One record per (selector, matched node): with -e a node matched by two
+  // selectors is reported once per selector, tagged with each label, and the
+  // merged stream is in document order (same node = same offset, so the
+  // stable sort keeps command-line selector order for ties). A positional
+  // selector is the degenerate case with a null label, which suppresses the
+  // [label] tag and the --json `label` field everywhere.
+  const selList = opts.selectors.length
+    ? opts.selectors
+    : [{ label: null, selector: opts.selector }];
+  const records = [];
+  for (const s of selList) {
+    for (const el of selectAll(s.selector, dom)) records.push({ el, label: s.label });
+  }
+  if (selList.length > 1) {
+    records.sort((a, b) => (a.el.startIndex || 0) - (b.el.startIndex || 0));
+  }
+  const found = records.length;
   // Aggregate modes suppress per-match output entirely.
   if (opts.quiet) return found;                                  // status only
   if (opts.filesWithMatches) { if (found) out.push(name); return found; }
@@ -492,7 +537,7 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
   // -m/--max-count caps matches per source; `limit` is the remaining global
   // budget from -M/--max-total (Infinity when neither applies).
   const cap = Math.min(opts.maxCount || Infinity, limit);
-  const limited = Number.isFinite(cap) ? matches.slice(0, cap) : matches;
+  const limited = Number.isFinite(cap) ? records.slice(0, cap) : records;
   if (opts.count) {
     // grep parity: every searched file reports a count, zeros included, so
     // scripts get one row per file (exit status still says whether anything
@@ -502,17 +547,32 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     return limited.length;
   }
   const starts = opts.print ? null : lineIndex(src);
-  // --parent re-targets matches to ancestors (no-op without it). Aggregate
-  // modes above operate on the raw matches; targeting only affects what prints.
-  const targets = retarget(limited, opts);
+  // --parent re-targets matches to ancestors (no-op without it). Dedup is per
+  // (ancestor, label), so two -e selectors sharing a container still report it
+  // once each. Aggregate modes above operate on the raw matches; targeting
+  // only affects what prints.
+  let targets = limited;
+  if (opts.parent) {
+    targets = [];
+    const seen = new Map();                       // ancestor -> Set of labels
+    for (const r of limited) {
+      const a = ancestor(r.el, opts.parent);
+      let labels = seen.get(a);
+      if (!labels) { labels = new Set(); seen.set(a, labels); }
+      if (!labels.has(r.label)) {
+        labels.add(r.label);
+        targets.push({ el: a, label: r.label });
+      }
+    }
+  }
   // For --parent + -p, remember which original matches sit under each ancestor
   // so they can be highlighted inside the printed container.
   const originsByTarget = new Map();
   if (opts.parent && opts.print) {
-    for (const el of limited) {
-      const a = ancestor(el, opts.parent);
+    for (const r of limited) {
+      const a = ancestor(r.el, opts.parent);
       if (!originsByTarget.has(a)) originsByTarget.set(a, []);
-      originsByTarget.get(a).push(el);
+      originsByTarget.get(a).push(r.el);
     }
   }
   if (opts.before > 0 || opts.after > 0) {
@@ -526,8 +586,9 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
   if (opts.json) {
     // NDJSON: one self-contained record per match. `html` is the exact source
     // slice; newlines are escaped by JSON.stringify, so each record stays on
-    // one line. Ignores --color and -n (line/col are always present).
-    for (const el of targets) {
+    // one line. Ignores --color and -n (line/col are always present). `label`
+    // appears only with -e.
+    for (const { el, label: selLabel } of targets) {
       const off = el.startIndex == null ? 0 : el.startIndex;
       const pos = offsetToPosition(starts, src, off);
       const nodeEnd = (el.endIndex == null ? off : el.endIndex) + 1;
@@ -535,6 +596,7 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
         file: name,
         line: pos.line,
         col: pos.bcol,
+        ...(selLabel !== null && { label: selLabel }),
         html: src.slice(off, nodeEnd),
         text: collapseWs(textOf(el)),
       }));
@@ -542,17 +604,21 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     return targets.length;
   }
   let emitted = 0;
-  for (const el of targets) {
+  for (const { el, label: selLabel } of targets) {
+    const c = opts.colorOn ? paint : (_, s) => s;
+    // The [label] tag from -e; a null label (positional selector) prints none.
+    const tag = selLabel === null ? '' : c(COLORS.label, `[${selLabel}]`) + ' ';
     if (opts.print) {
-      // -p shows the re-indented node only; no line:col locator. With --parent,
-      // the original matched descendants are highlighted inside the container.
+      // -p shows the re-indented node only; no line:col locator (the [label]
+      // tag gets its own line above the block). With --parent, the original
+      // matched descendants are highlighted inside the container.
+      if (tag) out.push(tag.trimEnd());
       out.push(prettyPrint(el, originsByTarget.get(el), opts), ''); // blank separator
       emitted++;
       continue;
     }
     const off = el.startIndex == null ? 0 : el.startIndex;
     const pos = offsetToPosition(starts, src, off);
-    const c = opts.colorOn ? paint : (_, s) => s;
 
     // Choose the content printed for this match. --attr/--text replace the
     // source line with the extracted value (whole value highlighted as the
@@ -579,7 +645,7 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     if (opts.lineNumber) {
       prefix += c(COLORS.line, String(pos.line)) + sep + c(COLORS.line, String(pos.bcol)) + ' ';
     }
-    out.push(prefix + text);
+    out.push(prefix + tag + text);
     emitted++;
   }
   return emitted;
@@ -789,7 +855,10 @@ function main() {
     }
   } catch (e) {
     if (e && e.message && /selector|tokeniz|parse/i.test(e.message)) {
-      fail(`invalid selector: ${opts.selector}`);
+      const shown = opts.selector != null
+        ? opts.selector
+        : opts.selectors.map(s => s.selector).join(', ');
+      fail(`invalid selector: ${shown}`);
     }
     fail(e.message);
   }

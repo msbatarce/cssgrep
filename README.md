@@ -76,6 +76,7 @@ locator appears only with `-n`:
 
 | Flag | Description |
 |------|-------------|
+| `-e`, `--selector <[label=]sel>` | Add a selector (repeatable). Matches from all `-e` selectors merge in document order, each tagged `[label]` (default label: the selector text). With `-e`, every positional argument is a file path, like `grep -e`. See [Multiple selectors](#multiple-selectors--e). |
 | `-r`, `--recursive` | Recurse into directory arguments (defaults to `.` if none given). |
 | `--max-depth <n>` | Limit `-r` recursion depth (`1` = the given directory only, no subdirectories). |
 | `--ext <list>` | Extensions to scan with `-r` (default `html,htm`). Value attaches with `=`: `--ext htm` or `--ext=htm`. |
@@ -88,7 +89,7 @@ locator appears only with `-n`:
 | `-p`, `--print` | Pretty-print the matched node's HTML, re-indented from scratch (works on minified input). No `line:col` locator is shown. |
 | `--attr <name>` | Print the value of attribute `<name>` for each match (nodes without it are skipped; if every match is skipped the exit status is 1). The name is matched case-insensitively. Honors `-n` and `-w`. |
 | `--text` | Print the matched node's text content, whitespace collapsed. Honors `-n` and `-w`. |
-| `--json` | Print one JSON object per match (NDJSON), with `file`, `line`, `col`, `html`, `text`. |
+| `--json` | Print one JSON object per match (NDJSON), with `file`, `line`, `col`, `html`, `text` — plus `label` when `-e` is used. |
 | `--parent <n>` | Report the `n`-th element ancestor of each match instead of the match itself (de-duplicated). Pairs well with `-p`. |
 | `-w`, `--max-width <n>` | Truncate the shown line to `n` columns (adds `…`). Value attaches or follows: `-w100`, `-w 100`, `--max-width=100`. |
 | `-A`, `--after-context <n>` | Print `n` source lines after each match. |
@@ -146,6 +147,9 @@ cssgrep 'a' --attr href testdata/links.html   # every link target
 cssgrep 'h1, h2' --text -r src/               # all heading text
 cssgrep 'img' -l -r .                          # files that contain an <img>
 
+# multiple labeled selectors — scrape several fields in one pass
+cssgrep -e 'title=h1' -e 'price=.card .price' --json page.html
+
 # structural context — show the container the match lives in
 cssgrep '.price' -p --parent 1 testdata/cards.html  # pretty-print each price's card
 
@@ -161,6 +165,35 @@ printing — structural context that line-based `-A`/`-B` can't express. Shared
 ancestors are de-duplicated, so `cssgrep '.price' --parent 1 -p` prints each
 containing card once. It composes with every print mode (`-p`, `--attr`,
 `--text`, `--json`, or the default line output).
+
+### Multiple selectors (`-e`)
+
+Repeatable `-e [label=]<selector>` searches several selectors in one parse
+pass and tags each match with which one hit — one command turns a page into
+labeled fields:
+
+```sh
+$ cssgrep -n -e 'title=h1' -e 'price=.card .price' page.html
+3:5 [title] <h1>Widget</h1>
+9:12 [price] <span class="price">$4.99</span>
+
+$ cssgrep --json -e 'title=h1' -e 'price=.card .price' page.html
+{"file":"page.html","line":3,"col":5,"label":"title","html":"<h1>Widget</h1>","text":"Widget"}
+{"file":"page.html","line":9,"col":12,"label":"price","html":"...","text":"$4.99"}
+```
+
+The label is anything matching `[A-Za-z_][A-Za-z0-9_-]*` before a `=`; since a
+bare `=` is never valid CSS outside `[...]`, there's no ambiguity — `-e
+'[href=x]'` is a plain selector. An unlabeled `-e` is tagged with its own
+selector text.
+
+Matches from all selectors merge into one document-order stream (a node hit by
+two selectors is reported once per selector, in `-e` order), and `-m`/`-M`
+budgets cap that merged stream, exactly like grep caps lines regardless of
+which pattern matched. Print modes (`--text`, `--attr`, `-p`, `--json`) apply
+globally to every selector. With `-e`, positional arguments are always file
+paths — like `grep -e`, a mistyped path is reported as unreadable rather than
+re-guessed as a selector.
 
 ### Inverting matches (why there's no `-v`)
 

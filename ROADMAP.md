@@ -6,8 +6,8 @@ grep-family flags plus HTML-specific capabilities plain grep can't offer.
 **Process:** implement in phase order. **Each feature is its own commit** (code +
 tests + docs, suite green) — see `CLAUDE.md`. Phases are independently shippable.
 
-**Status: Phases 0–7 are done (7 resolved as "no flag" — see below); Phases
-8–11 are planned (v1.3+), with design decisions open.** Phases 0–4 shipped:
+**Status: Phases 0–8 are done (7 resolved as "no flag" — see below); Phases
+9–11 are planned (v1.3+), with design decisions open.** Phases 0–4 shipped:
 `-m`, `-l`/`-L`/`-q`, `--attr`/`--text`, `--json`, `-0`/`--null`, `--parent`,
 and `-A`/`-B`/`-C`. This file is kept as the design record; future work can
 extend it.
@@ -252,7 +252,7 @@ the selector, emit the complement within a universe named by a second
 `--within <sel>` scope; would also need semantics for `-c -v`/`-l -v` and
 `--parent`.
 
-## Phase 8 — Multiple selectors with labels (`-e`)
+## Phase 8 — Multiple selectors with labels (`-e`) — implemented 2026-07-04
 
 Repeatable `-e [label=]<selector>` turns cssgrep into a multi-field extractor
 in one parse pass — the scraping use case:
@@ -263,23 +263,30 @@ cssgrep -e 'title=h1' -e 'price=.card .price' --json page.html
 
 emits NDJSON records tagged with which selector hit.
 
-- Line mode: the label joins the locator prefix (proposal:
-  `file:line:col [label] text` — grep never prints the pattern, so this is our
-  extension; format to be picked).
-- `--json`: add a `"label"` field (and/or `"selector"`).
+- Line mode: `file:line:col [label] text` — the label rides inside grepformat's
+  `%m`, so vim integration is untouched. Yellow when coloring.
+- `--json`: a `"label"` field, present only when `-e` is used.
 - Ordering: DOM order across all selectors; a node matching two selectors
-  emits once per selector (the labels differ).
-- Validation: `-e` and the positional selector are mutually exclusive; labels
-  optional (default: the selector text, or its index).
+  emits once per selector (ties keep `-e` order). `--parent` dedups per
+  (ancestor, label).
 - Supersedes the deferred `-f`/`-e` item below.
 
-**Design questions:**
-- Label syntax: `label=sel` collides with attribute selectors containing `=`
-  (e.g. `[href=x]`). Require the `=` before any `[`/valid-label chars only, or
-  pair a separate `--label` flag with each `-e`?
-- Do print modes become per-selector (e.g. `price=.price@data-value` attr
-  extraction) or stay global? (Lean: global first; per-selector later.)
-- How do `-m`/`-M` budgets count across selectors — per selector or overall?
+**Decisions (2026-07-04):**
+- **Label syntax: `ident=` prefix** (`[A-Za-z_][A-Za-z0-9_-]*` before the
+  first `=`). Verified unambiguous: css-what tokenizes a `=` outside brackets
+  as an unmatchable tag (`a=b` → tag `=b`), so the prefix can never shadow a
+  *working* selector; `[href=x]` stays a selector.
+- **Default label: the selector text.** `[label]` and the JSON field are
+  always present when `-e` is used; a bare positional selector never shows
+  them (output unchanged).
+- **Budgets count overall**: `-m`/`-M` truncate the merged document-order
+  stream, like grep caps lines regardless of which pattern matched.
+- **Print modes stay global** across all `-e` selectors. Per-selector
+  extraction (`price=.price@data-value`) remains a possible future extension;
+  `--json`'s `html`/`text` fields already cover most multi-field scraping.
+- With `-e`, every positional is a file path (grep `-e` semantics) — a
+  mistyped path reports as unreadable rather than being re-guessed as a
+  selector.
 
 ## Phase 9 — Rewrite mode (HTML refactor operations)
 
