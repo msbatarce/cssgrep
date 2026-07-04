@@ -182,6 +182,9 @@ document — so the selector, which already names the universe on the left of
 `:not()`, is both shorter and standard CSS. For whole files without a match,
 use `-L`.
 
+Typing `-v` or `--invert-match` out of grep habit fails with exit 2 and a
+message pointing back to these recipes, rather than a bare "unknown option".
+
 ## Vim / Neovim integration
 
 The `file:line:col text` format produced by `-n` is `:grep`-compatible. Point

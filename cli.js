@@ -80,6 +80,13 @@ function fail(msg) {
   process.exit(2);
 }
 
+// grep's most predictable stumble: there is no invert-match here, because CSS
+// expresses inversion in the selector itself. Teach instead of just rejecting.
+function failInvert(flag) {
+  fail(`${flag}: there is no invert-match — CSS expresses inversion in the ` +
+    `selector, e.g. 'img:not([alt])' or 'div:not(:has(a))'; see man cssgrep`);
+}
+
 // ANSI SGR codes matching grep's default scheme: bold-red match, magenta
 // filename, green line/col numbers, cyan separators.
 const COLORS = {
@@ -204,6 +211,7 @@ function parseArgs(argv) {
         case '--before-context': setBefore(value()); break;
         case '--context': setContext(value()); break;
         case '--color': case '--colour': opts.color = inline != null ? inline : 'auto'; break;
+        case '--invert-match': failInvert(name); break;
         default: fail(`unknown option: ${name}`);
       }
       continue;
@@ -235,6 +243,7 @@ function parseArgs(argv) {
           case '0': case 'Z': opts.nul = true; break;
           case 'H': opts.withFilename = true; break;
           case 's': opts.noMessages = true; break;
+          case 'v': failInvert('-v'); break;
           default: fail(`unknown option: -${ch}`);
         }
       }

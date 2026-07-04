@@ -240,7 +240,11 @@ expressible directly in the selector — which also names the inversion
 universe on the left of `:not()`, the thing a flag would have to reinvent
 (bare `:not(a)` matches nearly every element in the document). Shipped as an
 "Inverting matches" recipe section in README + man, with `check(...)` cases
-pinning each recipe so the docs can't silently rot.
+pinning each recipe so the docs can't silently rot. As a follow-up, `-v` and
+`--invert-match` fail with a *teaching* error (exit 2) that points at the
+recipes instead of a bare "unknown option" — the slot stays unassigned (it was
+deliberately not reused for e.g. a version alias) so reviving it for
+inversion would not be a breaking change.
 
 Rejected alternative, kept for the record in case a concrete use case
 `:not()`/`:has()` cannot express ever appears: **(b)** `-v` as sugar — apply

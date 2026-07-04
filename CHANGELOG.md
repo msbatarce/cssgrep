@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selector lists) and `:has()` recipes covering what grep's `-v` does, pinned
   by tests. Decided against adding a `-v` flag — the selector already names
   the inversion universe; see `ROADMAP.md` Phase 7 for the analysis.
+- `-v`/`--invert-match` now fail with a message pointing at the `:not()`/
+  `:has()` recipes (still exit 2), instead of a generic "unknown option".
 - Library API: `require('cssgrep')` now exposes `search(html, selector, opts)`,
   returning plain-object matches with source positions (`start`/`end` offsets,
   1-based `line`, byte-accurate `col`, `tag`, `attribs`, `html`, `text`) plus

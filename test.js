@@ -945,6 +945,15 @@ check('recipe: :not() takes a selector list with complex selectors', () => {
   assert.strictEqual(stdout.trimEnd(), 'buy');
 });
 
+check('-v / --invert-match fail with a pointer to the :not()/:has() recipes', () => {
+  for (const flag of ['-v', '--invert-match']) {
+    const r = spawnSync('node', [CLI, 'div', flag], { input: '<div>x</div>', encoding: 'utf8' });
+    assert.strictEqual(r.status, 2);
+    assert.ok(r.stderr.includes('no invert-match'), `${flag}: expected the teaching message`);
+    assert.ok(r.stderr.includes(':not('), `${flag}: expected a recipe pointer`);
+  }
+});
+
 // --- library API (lib.js) ----------------------------------------------------
 // The lib is consumed in-process: require('cssgrep') must expose search()
 // without executing the CLI (which is what the old index.js did on require).
