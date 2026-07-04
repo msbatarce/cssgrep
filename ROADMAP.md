@@ -6,7 +6,8 @@ grep-family flags plus HTML-specific capabilities plain grep can't offer.
 **Process:** implement in phase order. **Each feature is its own commit** (code +
 tests + docs, suite green) — see `CLAUDE.md`. Phases are independently shippable.
 
-**Status: all phases below are implemented (2026-06-29).** Phases 0–4 shipped:
+**Status: Phases 0–5 are implemented; Phases 6–11 are planned (v1.3+), with
+design decisions open.** Phases 0–4 shipped:
 `-m`, `-l`/`-L`/`-q`, `--attr`/`--text`, `--json`, `-0`/`--null`, `--parent`,
 and `-A`/`-B`/`-C`. This file is kept as the design record; future work can
 extend it.
@@ -25,6 +26,12 @@ scaffolding (issue/PR templates, editorconfig).
 **v1.2 (correctness & fidelity round): implemented 2026-07-02 — see Phase 5
 below.** Bugs found in a 2026-07-02 code audit, plus grep-parity deviations
 decided that day. All nine items shipped, one commit each.
+
+**v1.3+ (planned, 2026-07-02): Phases 6–11 below.** Direction chosen; design
+decisions still open — each phase lists its **Design questions**, to be settled
+before (or as the first commit of) that phase. Phase 6 (library-first refactor)
+is the enabler: the vim/neovim plugin will live in a separate repo consuming
+cssgrep as a library, and Phases 8–10 build on the lib/CLI split.
 
 ## Output-mode model (design backbone)
 
@@ -179,6 +186,196 @@ Fixes from the 2026-07-02 audit. Ordered by severity; each item is one commit
    output order is deterministic across platforms; document how `-M` composes
    with `-l`/`-L` (the budget counts matches, not files).
 
+---
+
+## Phase 6 — Library-first refactor (v1.3 enabler)
+
+Make cssgrep a library with a CLI artifact, so a vim/neovim plugin (separate
+repo) and other tools can consume the engine programmatically. Today
+`require('cssgrep')` *executes the CLI* — `index.js` calls `main()` at load.
+
+- Split `index.js` → `lib.js` (engine: parse, select, `lineIndex`/
+  `offsetToPosition`, `textOf`, `ancestor`/`retarget`) + `cli.js` (argv
+  parsing, walk, glob helpers, stdin, `prettyPrint`, output emitters, exit
+  codes). `bin` → `cli.js`; `main`/`exports` → `lib.js`.
+- Update in the same commit: Bun `build:*` scripts and `scripts/build-sea.js`
+  entry point, `files` in `package.json`, and the spawn target in `test.js`.
+- Public API: `search(html, selector, opts) →
+  [{ start, end, line, col, tag, attribs, html, text, node }]`, positions
+  computed with the existing helpers.
+- Ship a hand-written `index.d.ts` (dependency-light; no build step).
+- Semver: minor (1.3.0) — the CLI contract is unchanged, the lib surface is new.
+
+**Decisions (2026-07-04):**
+- **Result shape: plain objects** — `{ start, end, line, col, tag, attribs,
+  html, text }` — plus a `node` property holding the raw htmlparser2 element,
+  documented as an unstable/advanced escape hatch (the rewrite phase and the
+  vim plugin can reach the DOM without the lib's contract owning a dep's
+  types).
+- **Scope: strings only.** `search(html, selector, opts)` takes an HTML
+  string. File discovery/walking, globs, ignore rules, stdin, the binary
+  sniff, and `prettyPrint` (js-beautify) all stay in the CLI.
+- **Error model: throw** (e.g. on an unparsable selector); the CLI catches
+  and maps to exit 2.
+- **Module format: CJS only**, matching the repo; ESM consumers use Node's
+  CJS interop. No build step, hand-written `index.d.ts` for types.
+
+## Phase 7 — `-v`/`--invert-match`: use-case analysis → decision
+
+An analysis item, not an implementation item: CSS may already cover inversion.
+`css-select@7` supports `:not()` **and `:has()`**, so the classic asks are
+expressible today:
+
+- "files without a match" → already `-L`.
+- "elements that don't match X" → `:not(X)`; but the bare complement matches
+  nearly every element in the document (the universe problem).
+- "containers lacking a descendant" — the real-world ask (*divs with no link*,
+  *imgs with no alt*) → `div:not(:has(a))`, `img:not([alt])`.
+- "matches of A except those inside B" → `A:not(B A)`.
+
+Candidate outcomes, pick one:
+
+- **(a)** Don't add the flag. Add an "Inverting matches" recipe section to
+  README + man (`:not`, `:has`, `[attr]` patterns). Zero semantic murk.
+- **(b)** Add `-v` as sugar: apply the selector, emit the *complement within a
+  chosen universe* — requires a universe/scope definition.
+
+**Design questions:**
+- Is there any concrete use case `:not()`/`:has()` cannot express? (This
+  decides a vs b.)
+- If (b): what is the inversion universe — all elements, or a second
+  `--within <sel>` scope?
+- If (b): how does `-v` interact with the aggregate axis (`-c -v`, `-l -v`)
+  and with `--parent`?
+
+## Phase 8 — Multiple selectors with labels (`-e`)
+
+Repeatable `-e [label=]<selector>` turns cssgrep into a multi-field extractor
+in one parse pass — the scraping use case:
+
+```sh
+cssgrep -e 'title=h1' -e 'price=.card .price' --json page.html
+```
+
+emits NDJSON records tagged with which selector hit.
+
+- Line mode: the label joins the locator prefix (proposal:
+  `file:line:col [label] text` — grep never prints the pattern, so this is our
+  extension; format to be picked).
+- `--json`: add a `"label"` field (and/or `"selector"`).
+- Ordering: DOM order across all selectors; a node matching two selectors
+  emits once per selector (the labels differ).
+- Validation: `-e` and the positional selector are mutually exclusive; labels
+  optional (default: the selector text, or its index).
+- Supersedes the deferred `-f`/`-e` item below.
+
+**Design questions:**
+- Label syntax: `label=sel` collides with attribute selectors containing `=`
+  (e.g. `[href=x]`). Require the `=` before any `[`/valid-label chars only, or
+  pair a separate `--label` flag with each `-e`?
+- Do print modes become per-selector (e.g. `price=.price@data-value` attr
+  extraction) or stay global? (Lean: global first; per-selector later.)
+- How do `-m`/`-M` budgets count across selectors — per selector or overall?
+
+## Phase 9 — Rewrite mode (HTML refactor operations)
+
+The genuinely novel one: edit matched nodes, not just report them. HTML-shaped
+refactor ops: `--add-class <c>`, `--remove-class <c>`, `--set-attr k=v`,
+`--remove-attr k`, `--rename-tag <t>`. Start with the class/attr four; node
+removal/unwrap later if wanted.
+
+- **Fidelity is the core design decision.** Re-serializing the whole DOM
+  (dom-serializer) normalizes quoting/entities/whitespace everywhere —
+  unacceptable for a refactor tool. Preferred approach, aligned with this
+  project's byte-offset strength: **surgical byte-splice**. Every op touches
+  only the matched element's *opening tag*: take its byte range (startIndex →
+  end of the open tag), re-lex just that substring with a small local
+  attribute-span lexer (htmlparser2 doesn't expose attribute offsets), splice
+  the edit, leave every other byte identical. Apply splices back-to-front so
+  earlier offsets stay valid.
+- Output: rewritten document to stdout by default; `--diff` for a unified
+  diff; `--write` for in-place (`-i` is taken by `--ignore`). Multi-file +
+  stdout is ambiguous → multi-file requires `--write` or `--diff`.
+- Library API first (depends on Phase 6):
+  `transform(html, selector, ops) → { html, edits: [{start, end, before,
+  after}] }`; the CLI is a thin wrapper.
+- Validation: rewrite is a new *program mode*, not a fourth output axis — it
+  excludes the print and aggregate axes entirely (reject `-p`, `--json`, `-c`,
+  `-l`, `-q`, context flags). Extend the matrix accordingly.
+
+**Design questions:**
+- Splice vs re-serialize (lean: splice — confirm).
+- Exit codes: 0 = edits made, 1 = no matches/no edits, 2 = error
+  (grep-flavored)?
+- Multiple ops in one run: allowed? Applied in what order?
+- Overlap rules when an ancestor and its descendant both match: opening tags
+  are disjoint so splices don't conflict — but verify `--rename-tag`, which
+  must also edit the *closing* tag.
+- In-place safety: backup suffix? Atomic tmp-file + rename?
+- Non-UTF-8 inputs: refuse, or pass bytes through untouched outside splices?
+
+## Phase 10 — Watch mode (`--watch`)
+
+Re-run the search when watched files change — for editor/build-tool
+integration.
+
+- Watch the resolved path set (under `-r`, the walked tree — picking up new
+  files that match the include/ignore rules); debounce bursts; re-run, re-emit.
+- Two output protocols to choose between: **human** (clear screen + reprint,
+  watchexec-style) and **machine** (NDJSON events, pairing naturally with
+  `--json`: `{"event":"change","file":...}` followed by match records).
+- Validation: `--watch` requires file paths (stdin impossible); reject with
+  `-q`; `-c`/`-l` just re-run and reprint. Exit only on signal (SIGINT →
+  exit 0, matching `watch(1)`?).
+
+**Design questions:**
+- `fs.watch` (native, platform-flaky, dependency-light — repo convention) vs
+  polling fallback vs a chokidar dep? (Lean: native `fs.watch` with
+  `{recursive:true}` where supported; document the caveats.)
+- Event-protocol details; does human mode clear the screen?
+- Re-walk to discover new files on every change, or only on directory events?
+
+## Phase 11 — Performance round (measure first)
+
+Investigation phase: no optimization lands without a benchmark showing it
+matters.
+
+- **Item 1 — bench harness.** `bench/` with generated fixtures (one huge
+  minified single-line file; thousands of small files; a deep-nesting doc) and
+  an `npm run bench` script printing wall time + RSS. Record the baseline
+  numbers here.
+- Suspects to measure, cheapest first:
+  - **Startup latency** — matters most for the vim `grepprg` use case. All
+    four deps are `require`d unconditionally, but `js-beautify` and
+    `dom-serializer` are only needed for `-p`: lazy-require them — likely the
+    biggest cheap win.
+  - `lineIndex` is built per file even with zero matches — build lazily on
+    first emit.
+  - Whole-file DOM in memory: fine for the tool's scope? Declare an explicit
+    non-goal, or sketch a streaming plan.
+  - Serial file processing under `-r`: worker threads vs keep-simple.
+
+**Design questions:**
+- Concrete targets (e.g. cold start < 80 ms; a parse+select budget for a
+  50 MB minified file)?
+- Do benches run in CI as a regression gate, or stay manual?
+- Is parallelism worth the complexity under the dependency-light rule?
+
+### Downstream (not in this repo)
+
+The vim/neovim plugin becomes its own repo (e.g. `vim-cssgrep`) once Phase 6
+ships a stable lib + CLI. Until then the README `grepprg` snippets remain the
+supported integration.
+
+### Ordering
+
+Phase 6 first — it enables the external vim plugin and Phases 8–10 build on
+the lib/CLI split (Phase 9 puts `transform()` in the lib). Phase 7 is
+analysis-only and can happen anytime. Phase 11 is independent; its
+startup-latency item can be pulled forward at will.
+
+---
+
 ## Files touched (most phases)
 
 - `index.js`: `parseArgs` (flags + validation matrix), `searchSource` (mode
@@ -192,13 +389,13 @@ Fixes from the 2026-07-02 audit. Ordered by severity; each item is one commit
 
 Considered during the v1.1 round and intentionally left out for now:
 
-- **`-v`/`--invert-match`** — under discussion. Element-level inversion is
-  semantically murky for a selector tool ("which non-matching nodes?"); decide
-  the semantics before implementing. `-L` already covers "files without a match".
+- **`-v`/`--invert-match`** — graduated to Phase 7 (use-case analysis →
+  decision).
 - **Wider distribution** — Homebrew tap/formula and a Scoop manifest. More reach,
   but ongoing per-release maintenance; deferred.
-- **`-f`/`-e` (patterns from a file / multiple `-e`)** — low value: a CSS
-  selector list (`a, .b`) already expresses multi-selector OR in one argument.
+- **`-f` (patterns from a file)** — low value: a CSS selector list (`a, .b`)
+  already expresses multi-selector OR in one argument. Multiple `-e` is now
+  Phase 8 (labeled selectors), which supersedes the old `-e` idea here.
 - **Repo docs polish** — a `CONTRIBUTING.md`. Add when desired.
 - **Automated changelog** — `CHANGELOG.md` is hand-maintained (Keep a Changelog).
   Switching to `conventional-changelog` would require adopting Conventional
