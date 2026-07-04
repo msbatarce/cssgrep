@@ -10,33 +10,46 @@ position tracking**: it records each matched node's byte offset, so `line:col`
 output works even on minified, single-line HTML, and the output plugs straight
 into grep-aware editors (vim `grepprg`).
 
-Single binary: `index.js` (the `cssgrep` bin). No build step.
+Two files, no build step: `lib.js` (the library — `require('cssgrep')` exposes
+`search()`; types in `index.d.ts`) and `cli.js` (the `cssgrep` bin, a consumer
+of the lib).
 
 ## Run & test
 
 ```sh
 npm install     # deps: htmlparser2, css-select, dom-serializer, js-beautify
 npm test        # runs test.js — drives the built CLI as a subprocess
-node index.js <selector> [file ...]   # run directly
+node cli.js <selector> [file ...]     # run directly
 ```
 
-`test.js` is a dependency-free harness: it spawns `index.js` and asserts on
-stdout/exit status, so tests cover parsing + output end-to-end. Add a `check(...)`
-case for every new behavior. Always run `npm test` before committing.
+`test.js` is a dependency-free harness: it spawns `cli.js` and asserts on
+stdout/exit status, so tests cover parsing + output end-to-end (plus a few
+in-process checks of the `lib.js` API). Add a `check(...)` case for every new
+behavior. Always run `npm test` before committing.
 
-## Architecture (`index.js`)
+## Architecture
 
-Pipeline: parse args → resolve selector/paths → for each source, parse HTML,
-run the selector, format matches.
+CLI pipeline: parse args → resolve selector/paths → for each source, parse
+HTML, run the selector, format matches.
+
+`lib.js` — the engine (string in, data out; no process/fs concerns):
+
+- `search(html, selector, opts)` — the public API: parse with start/end
+  indices, select, return plain-object matches (`{start, end, line, col, tag,
+  attribs, html, text, node}`). Throws on bad input/selector.
+- `lineIndex(src)` / `offsetToPosition(starts, src, off)` — precomputed line
+  starts + binary search to turn a byte offset into 1-based `line:col` + the
+  line text (strips trailing `\r` for CRLF files).
+- `textOf` / `ancestor` / `retarget` — text extraction and `--parent`
+  re-targeting, shared with the CLI. Exported but internal (not in `index.d.ts`).
+
+`cli.js` — the `cssgrep` bin (imports the helpers above from `./lib.js`):
 
 - `parseArgs(argv)` — getopt-style parser. Returns an `opts` object and resolves
   derived state (e.g. `opts.colorOn`). All option validation lives here.
 - `resolveSelectorAndPaths(opts)` — the selector and paths share positional
   slots; this splits them by what exists on disk, so argument order doesn't
   matter (important for vim's `grepprg`).
-- `lineIndex(src)` / `offsetToPosition(starts, src, off)` — precomputed line
-  starts + binary search to turn a byte offset into 1-based `line:col` + the
-  line text (strips trailing `\r` for CRLF files).
 - `truncate(text, w)` / `renderText(pos, off, nodeEnd, opts)` — width limiting
   and in-line match highlighting (color applied to truncated text, never to the
   ellipsis or escape sequences).
@@ -60,7 +73,7 @@ run the selector, format matches.
 - **Keep it dependency-light.** Prefer a small local helper over a new
   dependency (and never rely on a transitive dep that isn't in `package.json`).
 - **Update docs with code.** Any new flag must update, in the same change, all
-  four doc surfaces: the `USAGE` string in `index.js`, the options table in
+  four doc surfaces: the `USAGE` string in `cli.js`, the options table in
   `README.md`, the man page (`man/cssgrep.1`), and the three completion files
   (`completions/cssgrep.bash`, `completions/_cssgrep`, `completions/cssgrep.fish`).
 

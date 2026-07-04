@@ -7,6 +7,9 @@ const { parseDocument } = require('htmlparser2');
 const { selectAll } = require('css-select');
 const render = require('dom-serializer').default;
 const { html: beautify } = require('js-beautify');
+const {
+  lineIndex, offsetToPosition, lineTextAt, textOf, collapseWs, ancestor, retarget,
+} = require('./lib.js');
 
 // Single source of truth for the version. A constant rather than a read of
 // package.json, so it survives compilation into a standalone binary (Bun
@@ -297,53 +300,6 @@ function resolveSelectorAndPaths(opts) {
   }
 }
 
-// Precompute the byte offset at which each line starts, so offset->line/col
-// is a binary search rather than a re-scan per match.
-function lineIndex(src) {
-  const starts = [0];
-  for (let i = 0; i < src.length; i++) {
-    if (src.charCodeAt(i) === 10 /* \n */) starts.push(i + 1);
-  }
-  return starts;
-}
-
-function offsetToPosition(starts, src, offset) {
-  // binary search for the greatest line start <= offset
-  let lo = 0, hi = starts.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (starts[mid] <= offset) lo = mid;
-    else hi = mid - 1;
-  }
-  const lineStart = starts[lo];
-  let lineEnd = src.indexOf('\n', lineStart);
-  if (lineEnd === -1) lineEnd = src.length;
-  // strip a trailing \r so CRLF files render cleanly
-  let text = src.slice(lineStart, lineEnd);
-  if (text.endsWith('\r')) text = text.slice(0, -1);
-  return {
-    line: lo + 1,            // 1-based
-    // col in UTF-16 code units: a JS string index into `text`, used by the
-    // highlight math. bcol in bytes: what gets printed — vim's grepformat %c
-    // and terminals count bytes, so non-ASCII text before the match would
-    // otherwise land the cursor short.
-    col: offset - lineStart + 1, // 1-based
-    bcol: Buffer.byteLength(src.slice(lineStart, offset), 'utf8') + 1, // 1-based
-    text,
-  };
-}
-
-// Text of a 1-based line number, with the trailing \r stripped (CRLF), plus the
-// line's byte start (so a node's offset maps to a column within it).
-function lineTextAt(starts, src, lineNo) {
-  const lineStart = starts[lineNo - 1];
-  let lineEnd = src.indexOf('\n', lineStart);
-  if (lineEnd === -1) lineEnd = src.length;
-  let text = src.slice(lineStart, lineEnd);
-  if (text.endsWith('\r')) text = text.slice(0, -1);
-  return { lineStart, text };
-}
-
 // Never cut between the halves of a surrogate pair: a lone half is invalid
 // Unicode and serializes as U+FFFD garbage. Backing off one unit loses at most
 // one display column.
@@ -375,43 +331,6 @@ function renderText(pos, off, nodeEnd, opts) {
   e = Math.max(s, Math.min(e, effLen));
   if (e <= s) return vis;          // nothing of the match is visible
   return vis.slice(0, s) + paint(COLORS.match, vis.slice(s, e)) + vis.slice(e);
-}
-
-// Concatenate the text of a node and all its descendants (dependency-free,
-// rather than pulling in domutils). Used by --text.
-function textOf(node) {
-  if (node.type === 'text') return node.data || '';
-  if (!node.children) return '';
-  let s = '';
-  for (const child of node.children) s += textOf(child);
-  return s;
-}
-
-const collapseWs = s => s.replace(/\s+/g, ' ').trim();
-
-const isElement = n => n && (n.type === 'tag' || n.type === 'script' || n.type === 'style');
-
-// Climb n element levels from el, clamping at the document root.
-function ancestor(el, n) {
-  let node = el;
-  for (let k = 0; k < n; k++) {
-    if (!isElement(node.parent)) break;
-    node = node.parent;
-  }
-  return node;
-}
-
-// --parent re-points each match to its n-th ancestor; dedup by identity so a
-// shared container is reported once, preserving first-seen order.
-function retarget(nodes, opts) {
-  if (!opts.parent) return nodes;
-  const seen = new Set();
-  const result = [];
-  for (const el of nodes) {
-    const a = ancestor(el, opts.parent);
-    if (!seen.has(a)) { seen.add(a); result.push(a); }
-  }
-  return result;
 }
 
 // Sentinels marking where a highlighted node begins/ends. They are injected as

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Library API: `require('cssgrep')` now exposes `search(html, selector, opts)`,
+  returning plain-object matches with source positions (`start`/`end` offsets,
+  1-based `line`, byte-accurate `col`, `tag`, `attribs`, `html`, `text`) plus
+  the raw htmlparser2 element as a `node` escape hatch. `opts.parent` mirrors
+  the CLI's `--parent`. TypeScript definitions ship as `index.d.ts`.
+
+### Changed
+- The package was split into `lib.js` (library) and `cli.js` (the `cssgrep`
+  bin); `index.js` is gone. Requiring the package no longer executes the CLI.
+  The CLI itself is unchanged.
+
 ## [1.2.0] - 2026-07-02
 
 ### Added

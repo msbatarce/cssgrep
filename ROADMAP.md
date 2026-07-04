@@ -6,7 +6,7 @@ grep-family flags plus HTML-specific capabilities plain grep can't offer.
 **Process:** implement in phase order. **Each feature is its own commit** (code +
 tests + docs, suite green) — see `CLAUDE.md`. Phases are independently shippable.
 
-**Status: Phases 0–5 are implemented; Phases 6–11 are planned (v1.3+), with
+**Status: Phases 0–6 are implemented; Phases 7–11 are planned (v1.3+), with
 design decisions open.** Phases 0–4 shipped:
 `-m`, `-l`/`-L`/`-q`, `--attr`/`--text`, `--json`, `-0`/`--null`, `--parent`,
 and `-A`/`-B`/`-C`. This file is kept as the design record; future work can
@@ -188,11 +188,11 @@ Fixes from the 2026-07-02 audit. Ordered by severity; each item is one commit
 
 ---
 
-## Phase 6 — Library-first refactor (v1.3 enabler)
+## Phase 6 — Library-first refactor (v1.3 enabler) — implemented 2026-07-04
 
 Make cssgrep a library with a CLI artifact, so a vim/neovim plugin (separate
-repo) and other tools can consume the engine programmatically. Today
-`require('cssgrep')` *executes the CLI* — `index.js` calls `main()` at load.
+repo) and other tools can consume the engine programmatically. Before this,
+`require('cssgrep')` *executed the CLI* — `index.js` called `main()` at load.
 
 - Split `index.js` → `lib.js` (engine: parse, select, `lineIndex`/
   `offsetToPosition`, `textOf`, `ancestor`/`retarget`) + `cli.js` (argv

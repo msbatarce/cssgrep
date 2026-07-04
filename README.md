@@ -200,6 +200,37 @@ cp completions/cssgrep.fish ~/.config/fish/completions/
 (The completions are hand-maintained; keep them in step with `--help` if you add
 a flag.)
 
+## Library usage
+
+The engine is also a programmatic API — `require('cssgrep')` gives you
+`search()` (the CLI is a separate entry point, so requiring the package never
+runs it):
+
+```js
+const { search } = require('cssgrep');
+
+const matches = search('<div class="card"><a href="/x">go</a></div>', '.card a');
+// [{
+//   start: 18, end: 39,        // offsets into the input: html.slice(start, end)
+//   line: 1, col: 19,          // 1-based; col counts bytes, like the CLI's -n
+//   tag: 'a',
+//   attribs: { href: '/x' },
+//   html: '<a href="/x">go</a>',
+//   text: 'go',
+//   node: [Element],           // raw htmlparser2 element (advanced, unstable)
+// }]
+```
+
+`search(html, selector, opts)` takes an HTML **string** (file discovery, stdin
+and binary detection are CLI concerns) and returns matches in DOM order.
+`opts.parent` re-targets each match to its n-th element ancestor, deduplicated —
+the CLI's `--parent`. It throws on non-string input or a selector
+[css-select](https://github.com/fb55/css-select) cannot parse. TypeScript types
+ship with the package (`index.d.ts`).
+
+Every match's `html` is the exact source slice, so offsets stay byte-faithful
+even on minified input — the same position tracking the CLI uses.
+
 ## How it works
 
 - [`htmlparser2`](https://github.com/fb55/htmlparser2) parses with

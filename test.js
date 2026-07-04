@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 
-const CLI = path.join(__dirname, 'index.js');
+const CLI = path.join(__dirname, 'cli.js');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cssgrep-'));
 let failures = 0;
 
@@ -914,6 +914,48 @@ check('-r walks in sorted order for deterministic output', () => {
   // multi.html sorts before sub/nested.html; readdir order must not leak through.
   const { stdout } = run(['div.a', '-r', '-l', tmp]);
   assert.deepStrictEqual(stdout.trimEnd().split('\n'), [fMulti, fNested]);
+});
+
+// --- library API (lib.js) ----------------------------------------------------
+// The lib is consumed in-process: require('cssgrep') must expose search()
+// without executing the CLI (which is what the old index.js did on require).
+const { search } = require('./lib.js');
+
+check('lib: search returns plain-object matches with positions', () => {
+  const matches = search(multiline, 'div.a');
+  assert.strictEqual(matches.length, 2);
+  const m = matches[0];
+  assert.strictEqual(m.line, 4);
+  assert.strictEqual(m.col, 5);
+  assert.strictEqual(m.tag, 'div');
+  assert.deepStrictEqual(m.attribs, { class: 'a' });
+  assert.strictEqual(m.html, '<div class="a">one</div>');
+  assert.strictEqual(m.text, 'one');
+  assert.strictEqual(multiline.slice(m.start, m.end), m.html);
+});
+
+check('lib: col counts bytes, like the CLI -n locator', () => {
+  const m = search('<p>é<b>x</b></p>', 'b')[0];
+  assert.strictEqual(m.line, 1);
+  assert.strictEqual(m.col, 6); // "<p>é" is 5 bytes in UTF-8, so <b> starts at byte col 6
+});
+
+check('lib: node escape hatch exposes the raw htmlparser2 element', () => {
+  const m = search(minified, '.hit')[0];
+  assert.strictEqual(m.node.name, 'span');
+  assert.strictEqual(m.node.startIndex, m.start);
+});
+
+check('lib: opts.parent retargets to the deduped ancestor', () => {
+  const matches = search(minified, '.hit', { parent: 1 });
+  assert.strictEqual(matches.length, 1); // both spans share the one div
+  assert.strictEqual(matches[0].tag, 'div');
+});
+
+check('lib: throws on an invalid selector and on non-string input', () => {
+  assert.throws(() => search(minified, 'div['));
+  assert.throws(() => search(null, 'div'), TypeError);
+  assert.throws(() => search(minified, ''), TypeError);
 });
 
 // --- teardown ---------------------------------------------------------------

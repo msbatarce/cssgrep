@@ -2,13 +2,16 @@
   "name": "cssgrep",
   "version": "1.2.0",
   "description": "Search HTML by CSS selector and print matches grep-style (file:line:col with -n).",
-  "main": "index.js",
+  "main": "lib.js",
+  "types": "index.d.ts",
   "bin": {
-    "cssgrep": "index.js"
+    "cssgrep": "cli.js"
   },
   "man": "./man/cssgrep.1",
   "files": [
-    "index.js",
+    "lib.js",
+    "cli.js",
+    "index.d.ts",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
@@ -28,11 +31,11 @@
   "homepage": "https://github.com/msbatarce/cssgrep#readme",
   "scripts": {
     "test": "node test.js",
-    "build:linux-x64": "bun build ./index.js --compile --target=bun-linux-x64 --outfile dist/cssgrep-linux-x64",
-    "build:linux-arm64": "bun build ./index.js --compile --target=bun-linux-arm64 --outfile dist/cssgrep-linux-arm64",
-    "build:darwin-x64": "bun build ./index.js --compile --target=bun-darwin-x64 --outfile dist/cssgrep-darwin-x64",
-    "build:darwin-arm64": "bun build ./index.js --compile --target=bun-darwin-arm64 --outfile dist/cssgrep-darwin-arm64",
-    "build:windows-x64": "bun build ./index.js --compile --target=bun-windows-x64 --outfile dist/cssgrep-windows-x64.exe",
+    "build:linux-x64": "bun build ./cli.js --compile --target=bun-linux-x64 --outfile dist/cssgrep-linux-x64",
+    "build:linux-arm64": "bun build ./cli.js --compile --target=bun-linux-arm64 --outfile dist/cssgrep-linux-arm64",
+    "build:darwin-x64": "bun build ./cli.js --compile --target=bun-darwin-x64 --outfile dist/cssgrep-darwin-x64",
+    "build:darwin-arm64": "bun build ./cli.js --compile --target=bun-darwin-arm64 --outfile dist/cssgrep-darwin-arm64",
+    "build:windows-x64": "bun build ./cli.js --compile --target=bun-windows-x64 --outfile dist/cssgrep-windows-x64.exe",
     "build:binaries": "npm run build:linux-x64 && npm run build:linux-arm64 && npm run build:darwin-x64 && npm run build:darwin-arm64 && npm run build:windows-x64",
     "build:sea": "node scripts/build-sea.js"
   },
