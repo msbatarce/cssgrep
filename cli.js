@@ -3,12 +3,10 @@
 
 const fs = require('fs');
 const path = require('path');
-const { parseDocument } = require('htmlparser2');
-const { selectAll } = require('css-select');
 const render = require('dom-serializer').default;
 const { html: beautify } = require('js-beautify');
 const {
-  lineIndex, offsetToPosition, lineTextAt, textOf, collapseWs, ancestor,
+  parse, offsetToPosition, lineTextAt, textOf, collapseWs, ancestor,
 } = require('./lib.js');
 
 // Single source of truth for the version. A constant rather than a read of
@@ -507,10 +505,12 @@ function emitContext(src, starts, name, showLabel, targets, opts, out) {
 // used by the aggregate modes (-l/-L/-c). `showLabel` decides whether per-match
 // lines carry a `file:` prefix (only when more than one file is searched).
 function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
-  const dom = parseDocument(src, {
-    withStartIndices: true,
-    withEndIndices: true,
-  });
+  // The lib owns parsing and selection: one parse per source, then one
+  // doc.search() per selector against the same tree. The CLI works on the
+  // raw nodes (the match objects' documented escape hatch) because its
+  // output modes need node-level access the match shape doesn't model
+  // (pretty-printing, ancestor re-targeting, in-line highlight spans).
+  const doc = parse(src);
   // One record per (selector, matched node): with -e a node matched by two
   // selectors is reported once per selector, tagged with each label, and the
   // merged stream is in document order (same node = same offset, so the
@@ -522,7 +522,7 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     : [{ label: null, selector: opts.selector }];
   const records = [];
   for (const s of selList) {
-    for (const el of selectAll(s.selector, dom)) records.push({ el, label: s.label });
+    for (const m of doc.search(s.selector)) records.push({ el: m.node, label: s.label });
   }
   if (selList.length > 1) {
     records.sort((a, b) => (a.el.startIndex || 0) - (b.el.startIndex || 0));
@@ -546,7 +546,7 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     out.push(label ? `${label}${fileSep}${limited.length}` : String(limited.length));
     return limited.length;
   }
-  const starts = opts.print ? null : lineIndex(src);
+  const starts = opts.print ? null : doc.lineStarts();
   // --parent re-targets matches to ancestors (no-op without it). Dedup is per
   // (ancestor, label), so two -e selectors sharing a container still report it
   // once each. Aggregate modes above operate on the raw matches; targeting

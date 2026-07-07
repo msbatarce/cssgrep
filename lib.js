@@ -1,15 +1,17 @@
 'use strict';
 
-// cssgrep's engine as a library. The public API is `search(html, selector,
-// opts)`: parse an HTML string with source positions, run a CSS selector, and
-// return one plain-object match per hit. The CLI (cli.js) consumes the same
-// helpers; everything here is string-in/data-out — file discovery, output
+// cssgrep's engine as a library. The public API is `parse(html)`: parse an
+// HTML string once (with source positions) and get back a document handle
+// whose `search(selector, opts)` can run any number of selectors against the
+// same tree — parse once, query many. The CLI (cli.js) is a consumer of this
+// API; everything here is string-in/data-out — file discovery, output
 // formatting and process concerns live in the CLI.
 //
-// Stability contract: `search` and its result fields are the public surface.
-// Each match also carries `node`, the raw htmlparser2 element, as an advanced
-// escape hatch — its shape belongs to htmlparser2, not to cssgrep. The other
-// exports are internal helpers shared with the CLI.
+// Stability contract: `parse`, the document's `html`/`search`, and the match
+// fields are the public surface. Each match also carries `node`, the raw
+// htmlparser2 element, as an advanced escape hatch — its shape belongs to
+// htmlparser2, not to cssgrep. The document's `dom`/`lineStarts`/`position`
+// and the other module exports are internals shared with the CLI.
 
 const { parseDocument } = require('htmlparser2');
 const { selectAll } = require('css-select');
@@ -98,8 +100,11 @@ function retarget(nodes, opts) {
   return result;
 }
 
-// Search an HTML string by CSS selector. Returns one match object per hit, in
-// DOM order:
+// Parse an HTML string once and return a document handle. `search(selector,
+// opts)` can then run any number of selectors against the same tree — the
+// parse and the line index are paid once per document, not per query.
+//
+// Each search returns one match object per hit, in DOM order:
 //
 //   { start, end, line, col, tag, attribs, html, text, node }
 //
@@ -111,44 +116,64 @@ function retarget(nodes, opts) {
 // - html: the exact source slice; text: collapsed text content.
 // - node: the raw htmlparser2 element (advanced/unstable escape hatch).
 //
+// line/col/html/text are lazy getters — a match costs nothing for fields
+// never read (aggregate-style consumers skip the position math entirely),
+// while JSON.stringify still serializes complete records.
+//
 // opts.parent (n >= 1) re-targets each match to its n-th element ancestor,
 // deduplicated by identity — the CLI's --parent.
 //
-// Throws on non-string input and on selectors css-select cannot parse.
-function search(html, selector, opts = {}) {
+// parse throws on non-string input; search throws on selectors css-select
+// cannot parse.
+function parse(html) {
   if (typeof html !== 'string') throw new TypeError('html must be a string');
-  if (typeof selector !== 'string' || selector.trim() === '') {
-    throw new TypeError('selector must be a non-empty string');
-  }
-  if (opts.parent != null && (!Number.isInteger(opts.parent) || opts.parent < 0)) {
-    throw new TypeError('opts.parent must be a non-negative integer');
-  }
   const dom = parseDocument(html, {
     withStartIndices: true,
     withEndIndices: true,
   });
-  const targets = retarget(selectAll(selector, dom), { parent: opts.parent || 0 });
-  const starts = lineIndex(html);
-  return targets.map(el => {
-    const start = el.startIndex == null ? 0 : el.startIndex;
-    const end = (el.endIndex == null ? start : el.endIndex) + 1; // exclusive
-    const pos = offsetToPosition(starts, html, start);
-    return {
-      start,
-      end,
-      line: pos.line,
-      col: pos.bcol,
-      tag: el.name,
-      attribs: el.attribs ? { ...el.attribs } : {},
-      html: html.slice(start, end),
-      text: collapseWs(textOf(el)),
-      node: el,
-    };
-  });
+  let starts = null;
+  const lineStarts = () => starts || (starts = lineIndex(html));
+  const position = offset => offsetToPosition(lineStarts(), html, offset);
+  return {
+    html,
+    // Internal (unstable): the raw htmlparser2 document and the cached
+    // line-index helpers, shared with the CLI.
+    dom,
+    lineStarts,
+    position,
+    search(selector, opts = {}) {
+      if (typeof selector !== 'string' || selector.trim() === '') {
+        throw new TypeError('selector must be a non-empty string');
+      }
+      if (opts.parent != null && (!Number.isInteger(opts.parent) || opts.parent < 0)) {
+        throw new TypeError('opts.parent must be a non-negative integer');
+      }
+      const targets = retarget(selectAll(selector, dom), { parent: opts.parent || 0 });
+      return targets.map(el => {
+        const start = el.startIndex == null ? 0 : el.startIndex;
+        const end = (el.endIndex == null ? start : el.endIndex) + 1; // exclusive
+        const match = {
+          start,
+          end,
+          tag: el.name,
+          attribs: el.attribs ? { ...el.attribs } : {},
+          get line() { return position(start).line; },
+          get col() { return position(start).bcol; },
+          get html() { return html.slice(start, end); },
+          get text() { return collapseWs(textOf(el)); },
+        };
+        // The escape hatch is a reference, not data: htmlparser2 nodes link
+        // parent/children circularly, so keep `node` non-enumerable to let
+        // JSON.stringify serialize matches cleanly.
+        Object.defineProperty(match, 'node', { value: el });
+        return match;
+      });
+    },
+  };
 }
 
 module.exports = {
-  search,
+  parse,
   // Internal helpers, shared with cli.js; not part of the stable API.
   lineIndex,
   offsetToPosition,

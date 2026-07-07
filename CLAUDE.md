@@ -11,7 +11,7 @@ output works even on minified, single-line HTML, and the output plugs straight
 into grep-aware editors (vim `grepprg`).
 
 Two files, no build step: `lib.js` (the library — `require('cssgrep')` exposes
-`search()`; types in `index.d.ts`) and `cli.js` (the `cssgrep` bin, a consumer
+`parse()`; types in `index.d.ts`) and `cli.js` (the `cssgrep` bin, a consumer
 of the lib).
 
 ## Run & test
@@ -34,9 +34,12 @@ HTML, run the selector, format matches.
 
 `lib.js` — the engine (string in, data out; no process/fs concerns):
 
-- `search(html, selector, opts)` — the public API: parse with start/end
-  indices, select, return plain-object matches (`{start, end, line, col, tag,
-  attribs, html, text, node}`). Throws on bad input/selector.
+- `parse(html)` — the public API: parse once (start/end indices, lazy cached
+  line index) into a document handle; `doc.search(selector, opts)` then runs
+  any number of selectors against the same tree, returning plain-object
+  matches (`{start, end, line, col, tag, attribs, html, text, node}` —
+  line/col/html/text lazy, `node` non-enumerable). Throws on bad
+  input/selector.
 - `lineIndex(src)` / `offsetToPosition(starts, src, off)` — precomputed line
   starts + binary search to turn a byte offset into 1-based `line:col` + the
   line text (strips trailing `\r` for CRLF files).

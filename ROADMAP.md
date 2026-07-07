@@ -212,13 +212,25 @@ repo) and other tools can consume the engine programmatically. Before this,
   documented as an unstable/advanced escape hatch (the rewrite phase and the
   vim plugin can reach the DOM without the lib's contract owning a dep's
   types).
-- **Scope: strings only.** `search(html, selector, opts)` takes an HTML
-  string. File discovery/walking, globs, ignore rules, stdin, the binary
-  sniff, and `prettyPrint` (js-beautify) all stay in the CLI.
+- **Scope: strings only.** The lib takes an HTML string. File
+  discovery/walking, globs, ignore rules, stdin, the binary sniff, and
+  `prettyPrint` (js-beautify) all stay in the CLI.
 - **Error model: throw** (e.g. on an unparsable selector); the CLI catches
   and maps to exit 2.
 - **Module format: CJS only**, matching the repo; ESM consumers use Node's
   CJS interop. No build step, hand-written `index.d.ts` for types.
+
+**API revision (2026-07-07):** the original one-shot `search(html, selector,
+opts)` re-parsed per call and left the CLI running parse/select itself — the
+CLI and lib had drifted apart instead of the CLI wrapping the lib. Replaced
+by **`parse(html)` → document handle with `.search(selector, opts)`**: the
+parse and line index are paid once per document and any number of selectors
+query the same tree. `searchSource` now consumes it, so the CLI's "-e parses
+once" is a property of the lib, not CLI-private plumbing. Match
+`line`/`col`/`html`/`text` became lazy getters (aggregate-style consumers pay
+no position math; `JSON.stringify` still serializes them) and `node` became
+non-enumerable (htmlparser2 nodes are circular — matches now stringify
+cleanly).
 
 ## Phase 7 — `-v`/`--invert-match`: use-case analysis → decision — decided 2026-07-04
 

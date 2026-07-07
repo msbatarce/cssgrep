@@ -19,11 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the inversion universe; see `ROADMAP.md` Phase 7 for the analysis.
 - `-v`/`--invert-match` now fail with a message pointing at the `:not()`/
   `:has()` recipes (still exit 2), instead of a generic "unknown option".
-- Library API: `require('cssgrep')` now exposes `search(html, selector, opts)`,
-  returning plain-object matches with source positions (`start`/`end` offsets,
-  1-based `line`, byte-accurate `col`, `tag`, `attribs`, `html`, `text`) plus
-  the raw htmlparser2 element as a `node` escape hatch. `opts.parent` mirrors
-  the CLI's `--parent`. TypeScript definitions ship as `index.d.ts`.
+- Library API: `require('cssgrep')` now exposes `parse(html)`, which parses
+  once (source positions, cached line index) and returns a document handle;
+  `doc.search(selector, opts)` runs any number of selectors against the same
+  tree — the CLI is built on it, so `-e` never re-parses. Matches are plain
+  objects with source positions (`start`/`end` offsets, 1-based `line`,
+  byte-accurate `col`, `tag`, `attribs`, `html`, `text` — the last four lazy)
+  plus the raw htmlparser2 element as a non-enumerable `node` escape hatch,
+  so records `JSON.stringify` cleanly. `opts.parent` mirrors the CLI's
+  `--parent`. TypeScript definitions ship as `index.d.ts`.
 
 ### Changed
 - The package was split into `lib.js` (library) and `cli.js` (the `cssgrep`

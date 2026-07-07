@@ -1008,12 +1008,12 @@ check('-e: positionals are file paths, like grep -e', () => {
 });
 
 // --- library API (lib.js) ----------------------------------------------------
-// The lib is consumed in-process: require('cssgrep') must expose search()
+// The lib is consumed in-process: require('cssgrep') must expose parse()
 // without executing the CLI (which is what the old index.js did on require).
-const { search } = require('./lib.js');
+const { parse } = require('./lib.js');
 
-check('lib: search returns plain-object matches with positions', () => {
-  const matches = search(multiline, 'div.a');
+check('lib: parse once, matches carry positions', () => {
+  const matches = parse(multiline).search('div.a');
   assert.strictEqual(matches.length, 2);
   const m = matches[0];
   assert.strictEqual(m.line, 4);
@@ -1025,28 +1025,45 @@ check('lib: search returns plain-object matches with positions', () => {
   assert.strictEqual(multiline.slice(m.start, m.end), m.html);
 });
 
+check('lib: one document handle serves many searches', () => {
+  const doc = parse(multiline);
+  assert.strictEqual(doc.search('div.a').length, 2);
+  assert.strictEqual(doc.search('p#x')[0].text, 'two');
+  assert.strictEqual(doc.search('.nope').length, 0);
+  assert.strictEqual(doc.html, multiline);
+});
+
 check('lib: col counts bytes, like the CLI -n locator', () => {
-  const m = search('<p>é<b>x</b></p>', 'b')[0];
+  const m = parse('<p>é<b>x</b></p>').search('b')[0];
   assert.strictEqual(m.line, 1);
   assert.strictEqual(m.col, 6); // "<p>é" is 5 bytes in UTF-8, so <b> starts at byte col 6
 });
 
+check('lib: lazy match fields survive JSON.stringify; node stays out of it', () => {
+  const m = JSON.parse(JSON.stringify(parse(minified).search('.hit')[0]));
+  assert.strictEqual(m.html, '<span class="hit">a</span>');
+  assert.strictEqual(m.text, 'a');
+  assert.strictEqual(m.line, 1);
+  assert.ok(!('node' in m), 'circular node reference must not serialize');
+});
+
 check('lib: node escape hatch exposes the raw htmlparser2 element', () => {
-  const m = search(minified, '.hit')[0];
+  const m = parse(minified).search('.hit')[0];
   assert.strictEqual(m.node.name, 'span');
   assert.strictEqual(m.node.startIndex, m.start);
 });
 
 check('lib: opts.parent retargets to the deduped ancestor', () => {
-  const matches = search(minified, '.hit', { parent: 1 });
+  const matches = parse(minified).search('.hit', { parent: 1 });
   assert.strictEqual(matches.length, 1); // both spans share the one div
   assert.strictEqual(matches[0].tag, 'div');
 });
 
 check('lib: throws on an invalid selector and on non-string input', () => {
-  assert.throws(() => search(minified, 'div['));
-  assert.throws(() => search(null, 'div'), TypeError);
-  assert.throws(() => search(minified, ''), TypeError);
+  const doc = parse(minified);
+  assert.throws(() => doc.search('div['));
+  assert.throws(() => doc.search(''), TypeError);
+  assert.throws(() => parse(null), TypeError);
 });
 
 // --- teardown ---------------------------------------------------------------
