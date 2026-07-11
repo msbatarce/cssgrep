@@ -359,19 +359,30 @@ integration.
 
 - Watch the resolved path set (under `-r`, the walked tree — picking up new
   files that match the include/ignore rules); debounce bursts; re-run, re-emit.
-- Two output protocols to choose between: **human** (clear screen + reprint,
-  watchexec-style) and **machine** (NDJSON events, pairing naturally with
-  `--json`: `{"event":"change","file":...}` followed by match records).
 - Validation: `--watch` requires file paths (stdin impossible); reject with
-  `-q`; `-c`/`-l` just re-run and reprint. Exit only on signal (SIGINT →
-  exit 0, matching `watch(1)`?).
+  `-q` and with the rewrite ops; `-c`/`-l` just re-run and reprint. Exit only
+  on signal (SIGINT → exit 0, matching `watch(1)`).
 
-**Design questions:**
-- `fs.watch` (native, platform-flaky, dependency-light — repo convention) vs
-  polling fallback vs a chokidar dep? (Lean: native `fs.watch` with
-  `{recursive:true}` where supported; document the caveats.)
-- Event-protocol details; does human mode clear the screen?
-- Re-walk to discover new files on every change, or only on directory events?
+**Decisions (2026-07-07):**
+- **Backend: native `fs.watch` with `{recursive: true}`**, no new dependency
+  and no polling fallback in v1. Verified working on Linux for our supported
+  Node range (Linux recursive support landed in Node 19.1; we require
+  ≥ 20.19); native on macOS/Windows. Documented caveat: unreliable on
+  network/virtual filesystems — a `--poll` escape hatch can be added later if
+  someone hits it.
+- **Output is adaptive, mirroring the `--color=auto` convention.** On a TTY:
+  clear screen + reprint the full results each run (live view). Piped: never
+  emit escape codes — append each run's results after a `== HH:MM:SS … ==`
+  separator line. `--no-clear` forces append mode on a TTY (tmux scrollback,
+  `script(1)`); there is deliberately no "force clear into a pipe" flag.
+- **`--json` is the machine protocol:** an NDJSON stream — each rerun emits
+  `{"event":"run","changed":…,"matches":n}` followed by the match records.
+  Never clears; rejects `--no-clear`.
+- **New files: re-walk on every (debounced) change.** Each rerun repeats the
+  exact walk a fresh invocation would do, so `--include`/`--ignore`/`--ext`
+  rules apply to new files automatically and deletions drop out — no
+  event-bookkeeping, identical semantics to a non-watch run. A directory scan
+  per rerun is fine at HTML-project scale.
 
 ## Phase 11 — Performance round (measure first)
 
