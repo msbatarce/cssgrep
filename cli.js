@@ -3,22 +3,24 @@
 
 const fs = require('fs');
 const path = require('path');
-const { parseDocument } = require('htmlparser2');
-const { selectAll } = require('css-select');
 const render = require('dom-serializer').default;
 const { html: beautify } = require('js-beautify');
+const {
+  parse, offsetToPosition, lineTextAt, textOf, collapseWs, ancestor,
+} = require('./lib.js');
 
 // Single source of truth for the version. A constant rather than a read of
 // package.json, so it survives compilation into a standalone binary (Bun
 // --compile / Node SEA), where package.json won't sit next to the executable.
 // Keep in sync with package.json on release.
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 
 const USAGE = `cssgrep - search HTML by CSS selector, grep-style.
 
 Usage:
   cssgrep <selector> [file ...]
   cssgrep <selector> -r <dir ...>
+  cssgrep -e '[label=]<sel>' [-e ...] [file ...]
   cat file.html | cssgrep <selector>
 
 Output (one line per match):
@@ -28,6 +30,10 @@ Output (one line per match):
   {file}:{line}:{col} {line contents}       (with -n; multiple files)
 
 Options:
+  -e, --selector <[label=]sel>   Add a selector (repeatable). Matches from all
+                         -e selectors merge in document order; each is tagged
+                         [label] (default label: the selector text itself).
+                         With -e, every positional argument is a file path.
   -r, --recursive        Recurse into directory arguments.
       --max-depth <n>    Limit -r recursion depth (1 = the given dir only).
       --ext <list>       Comma-separated extensions for -r (default: html,htm).
@@ -41,7 +47,8 @@ Options:
   -p, --print            Pretty-print the matched node's HTML above its location.
       --attr <name>      Print the value of attribute <name> (skips nodes without it).
       --text             Print the matched node's text content (whitespace collapsed).
-      --json             Print one JSON record per match (NDJSON: file,line,col,html,text).
+      --json             Print one JSON record per match (NDJSON: file,line,col,
+                         html,text; plus label with -e).
       --parent <n>       Report the n-th ancestor of each match instead (dedup'd).
   -w, --max-width <n>    Truncate the shown line to <n> columns (ellipsis added).
   -A, --after-context <n>    Print <n> source lines after each match.
@@ -60,8 +67,30 @@ Options:
       --no-filename      Never print the file name prefix (even for many files).
       --color[=<when>]   Colorize output: auto (default, also what a bare
                          --color means, like grep), always or never.
+      --watch            Re-run the search whenever a watched file changes
+                         (requires paths; excludes -q and the rewrite ops).
+                         On a TTY the screen is cleared and results reprinted;
+                         piped output appends each run after a == HH:MM:SS ==
+                         separator; with --json each run emits an NDJSON
+                         {"event":"run",...} record followed by the matches.
+                         Exit with Ctrl-C (status 0).
+      --no-clear         With --watch on a TTY: append instead of clearing.
   -h, --help             Show this help.
   -V, --version          Show version and exit.
+
+Rewrite (a separate mode: excludes -n/-p/--attr/--text/--json, -c/-l/-L/-q,
+-A/-B/-C, -m/-M, -w, -0 and -e; composes with --parent):
+      --add-class <c>    Add a class to each matched element.
+      --remove-class <c> Remove a class (attribute dropped when emptied).
+      --set-attr <k=v>   Set attribute k to v (added if missing).
+      --remove-attr <k>  Remove attribute k.
+      --rename-tag <t>   Rename the element (and its closing tag, if present).
+      --diff             Emit a unified diff instead of the document; required
+                         for multiple files. Apply with git apply / patch.
+
+A single input prints the rewritten document to stdout. Only the matched tags'
+bytes change; ops compose as rename -> remove-attr -> set-attr -> remove-class
+-> add-class regardless of argument order. Exit: 0 edits, 1 none, 2 error.
 
 Short flags combine (-rn) and a value attaches to its flag (-w100) or follows it
 (-w 100); a value-taking flag may close a cluster (-rnw100). Long options take a
@@ -77,13 +106,22 @@ function fail(msg) {
   process.exit(2);
 }
 
+// grep's most predictable stumble: there is no invert-match here, because CSS
+// expresses inversion in the selector itself. Teach instead of just rejecting.
+function failInvert(flag) {
+  fail(`${flag}: there is no invert-match — CSS expresses inversion in the ` +
+    `selector, e.g. 'img:not([alt])' or 'div:not(:has(a))'; see man cssgrep`);
+}
+
 // ANSI SGR codes matching grep's default scheme: bold-red match, magenta
-// filename, green line/col numbers, cyan separators.
+// filename, green line/col numbers, cyan separators. The [label] tag from -e
+// has no grep counterpart; yellow keeps it distinct from all of the above.
 const COLORS = {
   match: '1;31',
   file: '35',
   line: '32',
   sep: '36',
+  label: '33',
 };
 
 function paint(code, str) {
@@ -93,6 +131,7 @@ function paint(code, str) {
 function parseArgs(argv) {
   const opts = {
     selector: null,
+    selectors: [],
     positionals: [],
     paths: [],
     recursive: false,
@@ -122,6 +161,10 @@ function parseArgs(argv) {
     noFilename: false,
     noMessages: false,
     color: 'auto',
+    rewrite: { renameTag: null, removeAttr: [], setAttr: {}, removeClass: [], addClass: [] },
+    diff: false,
+    watch: false,
+    noClear: false,
   };
   const setExts = v => {
     opts.extGiven = true;
@@ -141,6 +184,16 @@ function parseArgs(argv) {
   const setAfter = v => { opts.after = boundedInt(v, '--after-context', 0); };
   const setBefore = v => { opts.before = boundedInt(v, '--before-context', 0); };
   const setContext = v => { opts.after = opts.before = boundedInt(v, '--context', 0); };
+  // -e [label=]<selector>. A `=` outside brackets never begins a *working*
+  // selector (css-what tokenizes `a=b` as an unmatchable tag named `=b`), so a
+  // leading identifier + `=` is unambiguously a label. Unlabeled selectors are
+  // tagged with their own text, so [label] and the --json `label` field are
+  // always present when -e is used.
+  const addSelector = v => {
+    const m = /^([A-Za-z_][A-Za-z0-9_-]*)=([\s\S]+)$/.exec(v);
+    if (m) opts.selectors.push({ label: m[1], selector: m[2] });
+    else opts.selectors.push({ label: v, selector: v });
+  };
   const addIgnore = v => { const c = compileIgnore(v); if (c) opts.ignore.push(c); };
   const addInclude = v => { const c = compileIgnore(v); if (c) opts.include.push(c); };
   const addIgnoreFile = v => {
@@ -152,7 +205,7 @@ function parseArgs(argv) {
   // Short flags that take a value (rest of the cluster, or the next argument).
   const shortValueFlags = {
     w: setMaxWidth, m: setMaxCount, M: setMaxTotal, A: setAfter, B: setBefore, C: setContext,
-    i: addIgnore,
+    i: addIgnore, e: addSelector,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -201,6 +254,23 @@ function parseArgs(argv) {
         case '--before-context': setBefore(value()); break;
         case '--context': setContext(value()); break;
         case '--color': case '--colour': opts.color = inline != null ? inline : 'auto'; break;
+        case '--selector': addSelector(value()); break;
+        case '--add-class': opts.rewrite.addClass.push(value()); break;
+        case '--remove-class': opts.rewrite.removeClass.push(value()); break;
+        case '--remove-attr': opts.rewrite.removeAttr.push(value()); break;
+        case '--set-attr': {
+          const v = value();
+          const eq = v.indexOf('=');
+          const k = eq === -1 ? v : v.slice(0, eq);
+          if (!k) fail('--set-attr requires a name (name=value)');
+          opts.rewrite.setAttr[k] = eq === -1 ? '' : v.slice(eq + 1);
+          break;
+        }
+        case '--rename-tag': opts.rewrite.renameTag = value(); break;
+        case '--diff': opts.diff = true; break;
+        case '--watch': opts.watch = true; break;
+        case '--no-clear': opts.noClear = true; break;
+        case '--invert-match': failInvert(name); break;
         default: fail(`unknown option: ${name}`);
       }
       continue;
@@ -232,6 +302,7 @@ function parseArgs(argv) {
           case '0': case 'Z': opts.nul = true; break;
           case 'H': opts.withFilename = true; break;
           case 's': opts.noMessages = true; break;
+          case 'v': failInvert('-v'); break;
           default: fail(`unknown option: -${ch}`);
         }
       }
@@ -240,7 +311,9 @@ function parseArgs(argv) {
 
     opts.positionals.push(a);
   }
-  if (opts.positionals.length === 0) fail('no selector given (try --help)');
+  if (opts.positionals.length === 0 && !opts.selectors.length) {
+    fail('no selector given (try --help)');
+  }
   // Aggregate modes each suppress per-match output, so at most one may apply.
   const aggregates = [opts.count, opts.filesWithMatches, opts.filesWithoutMatch, opts.quiet]
     .filter(Boolean).length;
@@ -260,6 +333,34 @@ function parseArgs(argv) {
   }
   if (opts.lineNumber && opts.count) fail('-n cannot be combined with -c');
   if (opts.lineNumber && opts.print) fail('-n cannot be combined with -p');
+  // Rewrite is its own program mode, not a fourth output axis: it emits a
+  // document (or a diff), so everything that shapes per-match output is
+  // meaningless with it.
+  const r = opts.rewrite;
+  opts.rewriteActive = Boolean(r.renameTag) || r.removeAttr.length > 0
+    || r.removeClass.length > 0 || r.addClass.length > 0
+    || Object.keys(r.setAttr).length > 0;
+  if (opts.diff && !opts.rewriteActive) fail('--diff requires a rewrite operation');
+  if (opts.rewriteActive) {
+    if (printModes > 0) fail('rewrite operations cannot be combined with -p/--attr/--text/--json');
+    if (aggregates > 0) fail('rewrite operations cannot be combined with -c/-l/-L/-q');
+    if (opts.before > 0 || opts.after > 0) fail('rewrite operations cannot be combined with -A/-B/-C');
+    if (opts.lineNumber) fail('rewrite operations cannot be combined with -n');
+    if (opts.maxWidth) fail('rewrite operations cannot be combined with -w');
+    if (opts.nul) fail('rewrite operations cannot be combined with -0');
+    if (opts.maxCount || opts.maxTotal) fail('rewrite operations cannot be combined with -m/-M');
+    if (opts.selectors.length) {
+      fail('rewrite takes a single positional selector (use a selector list like "a, b" instead of -e)');
+    }
+  }
+  // Watch re-runs the search on change; modes that end the run early or edit
+  // files make no sense against it.
+  if (opts.noClear && !opts.watch) fail('--no-clear requires --watch');
+  if (opts.watch) {
+    if (opts.quiet) fail('--watch cannot be combined with -q');
+    if (opts.rewriteActive) fail('--watch cannot be combined with rewrite operations');
+    if (opts.noClear && opts.json) fail('--no-clear is meaningless with --json (it never clears)');
+  }
   if (!['auto', 'always', 'never'].includes(opts.color)) {
     fail(`invalid --color value: ${opts.color} (expected auto, always or never)`);
   }
@@ -279,6 +380,13 @@ function parseArgs(argv) {
 // `grepprg`, which appends args in its own order). Fall back to
 // "selector is the first positional" when the split is unclear.
 function resolveSelectorAndPaths(opts) {
+  // With -e the selectors are explicit, so — like grep -e — every positional
+  // is a file path; a mistyped one is reported as unreadable, not re-guessed
+  // as a selector.
+  if (opts.selectors.length) {
+    opts.paths = opts.positionals;
+    return;
+  }
   const pos = opts.positionals;
   const onDisk = [];
   const notOnDisk = [];
@@ -295,53 +403,6 @@ function resolveSelectorAndPaths(opts) {
     opts.selector = pos[0];
     opts.paths = pos.slice(1);
   }
-}
-
-// Precompute the byte offset at which each line starts, so offset->line/col
-// is a binary search rather than a re-scan per match.
-function lineIndex(src) {
-  const starts = [0];
-  for (let i = 0; i < src.length; i++) {
-    if (src.charCodeAt(i) === 10 /* \n */) starts.push(i + 1);
-  }
-  return starts;
-}
-
-function offsetToPosition(starts, src, offset) {
-  // binary search for the greatest line start <= offset
-  let lo = 0, hi = starts.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (starts[mid] <= offset) lo = mid;
-    else hi = mid - 1;
-  }
-  const lineStart = starts[lo];
-  let lineEnd = src.indexOf('\n', lineStart);
-  if (lineEnd === -1) lineEnd = src.length;
-  // strip a trailing \r so CRLF files render cleanly
-  let text = src.slice(lineStart, lineEnd);
-  if (text.endsWith('\r')) text = text.slice(0, -1);
-  return {
-    line: lo + 1,            // 1-based
-    // col in UTF-16 code units: a JS string index into `text`, used by the
-    // highlight math. bcol in bytes: what gets printed — vim's grepformat %c
-    // and terminals count bytes, so non-ASCII text before the match would
-    // otherwise land the cursor short.
-    col: offset - lineStart + 1, // 1-based
-    bcol: Buffer.byteLength(src.slice(lineStart, offset), 'utf8') + 1, // 1-based
-    text,
-  };
-}
-
-// Text of a 1-based line number, with the trailing \r stripped (CRLF), plus the
-// line's byte start (so a node's offset maps to a column within it).
-function lineTextAt(starts, src, lineNo) {
-  const lineStart = starts[lineNo - 1];
-  let lineEnd = src.indexOf('\n', lineStart);
-  if (lineEnd === -1) lineEnd = src.length;
-  let text = src.slice(lineStart, lineEnd);
-  if (text.endsWith('\r')) text = text.slice(0, -1);
-  return { lineStart, text };
 }
 
 // Never cut between the halves of a surrogate pair: a lone half is invalid
@@ -375,43 +436,6 @@ function renderText(pos, off, nodeEnd, opts) {
   e = Math.max(s, Math.min(e, effLen));
   if (e <= s) return vis;          // nothing of the match is visible
   return vis.slice(0, s) + paint(COLORS.match, vis.slice(s, e)) + vis.slice(e);
-}
-
-// Concatenate the text of a node and all its descendants (dependency-free,
-// rather than pulling in domutils). Used by --text.
-function textOf(node) {
-  if (node.type === 'text') return node.data || '';
-  if (!node.children) return '';
-  let s = '';
-  for (const child of node.children) s += textOf(child);
-  return s;
-}
-
-const collapseWs = s => s.replace(/\s+/g, ' ').trim();
-
-const isElement = n => n && (n.type === 'tag' || n.type === 'script' || n.type === 'style');
-
-// Climb n element levels from el, clamping at the document root.
-function ancestor(el, n) {
-  let node = el;
-  for (let k = 0; k < n; k++) {
-    if (!isElement(node.parent)) break;
-    node = node.parent;
-  }
-  return node;
-}
-
-// --parent re-points each match to its n-th ancestor; dedup by identity so a
-// shared container is reported once, preserving first-seen order.
-function retarget(nodes, opts) {
-  if (!opts.parent) return nodes;
-  const seen = new Set();
-  const result = [];
-  for (const el of nodes) {
-    const a = ancestor(el, opts.parent);
-    if (!seen.has(a)) { seen.add(a); result.push(a); }
-  }
-  return result;
 }
 
 // Sentinels marking where a highlighted node begins/ends. They are injected as
@@ -503,14 +527,14 @@ function emitContext(src, starts, name, showLabel, targets, opts, out) {
   const lineCount = src.length === 0 ? 0 : (src.endsWith('\n') ? starts.length - 1 : starts.length);
 
   // Map each match line to a representative node span (the first match on it),
-  // which drives the in-line highlight when coloring.
+  // which drives the in-line highlight — and the [label] tag — when emitting.
   const info = new Map();
-  for (const el of targets) {
+  for (const { el, label: selLabel } of targets) {
     const off = el.startIndex == null ? 0 : el.startIndex;
     const pos = offsetToPosition(starts, src, off);
     if (info.has(pos.line)) continue;
     const nodeEnd = (el.endIndex == null ? off : el.endIndex) + 1;
-    info.set(pos.line, { off, nodeEnd, pos });
+    info.set(pos.line, { off, nodeEnd, pos, selLabel });
   }
 
   // Expand match lines to [L-before, L+after] windows and merge adjacent ones.
@@ -537,8 +561,9 @@ function emitContext(src, starts, name, showLabel, targets, opts, out) {
         prefix += m ? c(COLORS.sep, ':') + c(COLORS.line, String(m.pos.bcol)) + ' '
                     : c(COLORS.sep, '-');
       }
+      const tag = m && m.selLabel != null ? c(COLORS.label, `[${m.selLabel}]`) + ' ' : '';
       const body = m
-        ? renderText(m.pos, m.off, m.nodeEnd, opts)        // highlight + truncate
+        ? tag + renderText(m.pos, m.off, m.nodeEnd, opts)  // highlight + truncate
         : truncate(lineTextAt(starts, src, L).text, opts.maxWidth);
       out.push(prefix + body);
     }
@@ -549,12 +574,29 @@ function emitContext(src, starts, name, showLabel, targets, opts, out) {
 // used by the aggregate modes (-l/-L/-c). `showLabel` decides whether per-match
 // lines carry a `file:` prefix (only when more than one file is searched).
 function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
-  const dom = parseDocument(src, {
-    withStartIndices: true,
-    withEndIndices: true,
-  });
-  const matches = selectAll(opts.selector, dom);
-  const found = matches.length;
+  // The lib owns parsing and selection: one parse per source, then one
+  // doc.search() per selector against the same tree. The CLI works on the
+  // raw nodes (the match objects' documented escape hatch) because its
+  // output modes need node-level access the match shape doesn't model
+  // (pretty-printing, ancestor re-targeting, in-line highlight spans).
+  const doc = parse(src);
+  // One record per (selector, matched node): with -e a node matched by two
+  // selectors is reported once per selector, tagged with each label, and the
+  // merged stream is in document order (same node = same offset, so the
+  // stable sort keeps command-line selector order for ties). A positional
+  // selector is the degenerate case with a null label, which suppresses the
+  // [label] tag and the --json `label` field everywhere.
+  const selList = opts.selectors.length
+    ? opts.selectors
+    : [{ label: null, selector: opts.selector }];
+  const records = [];
+  for (const s of selList) {
+    for (const m of doc.search(s.selector)) records.push({ el: m.node, label: s.label });
+  }
+  if (selList.length > 1) {
+    records.sort((a, b) => (a.el.startIndex || 0) - (b.el.startIndex || 0));
+  }
+  const found = records.length;
   // Aggregate modes suppress per-match output entirely.
   if (opts.quiet) return found;                                  // status only
   if (opts.filesWithMatches) { if (found) out.push(name); return found; }
@@ -564,7 +606,7 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
   // -m/--max-count caps matches per source; `limit` is the remaining global
   // budget from -M/--max-total (Infinity when neither applies).
   const cap = Math.min(opts.maxCount || Infinity, limit);
-  const limited = Number.isFinite(cap) ? matches.slice(0, cap) : matches;
+  const limited = Number.isFinite(cap) ? records.slice(0, cap) : records;
   if (opts.count) {
     // grep parity: every searched file reports a count, zeros included, so
     // scripts get one row per file (exit status still says whether anything
@@ -573,18 +615,33 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     out.push(label ? `${label}${fileSep}${limited.length}` : String(limited.length));
     return limited.length;
   }
-  const starts = opts.print ? null : lineIndex(src);
-  // --parent re-targets matches to ancestors (no-op without it). Aggregate
-  // modes above operate on the raw matches; targeting only affects what prints.
-  const targets = retarget(limited, opts);
+  const starts = opts.print ? null : doc.lineStarts();
+  // --parent re-targets matches to ancestors (no-op without it). Dedup is per
+  // (ancestor, label), so two -e selectors sharing a container still report it
+  // once each. Aggregate modes above operate on the raw matches; targeting
+  // only affects what prints.
+  let targets = limited;
+  if (opts.parent) {
+    targets = [];
+    const seen = new Map();                       // ancestor -> Set of labels
+    for (const r of limited) {
+      const a = ancestor(r.el, opts.parent);
+      let labels = seen.get(a);
+      if (!labels) { labels = new Set(); seen.set(a, labels); }
+      if (!labels.has(r.label)) {
+        labels.add(r.label);
+        targets.push({ el: a, label: r.label });
+      }
+    }
+  }
   // For --parent + -p, remember which original matches sit under each ancestor
   // so they can be highlighted inside the printed container.
   const originsByTarget = new Map();
   if (opts.parent && opts.print) {
-    for (const el of limited) {
-      const a = ancestor(el, opts.parent);
+    for (const r of limited) {
+      const a = ancestor(r.el, opts.parent);
       if (!originsByTarget.has(a)) originsByTarget.set(a, []);
-      originsByTarget.get(a).push(el);
+      originsByTarget.get(a).push(r.el);
     }
   }
   if (opts.before > 0 || opts.after > 0) {
@@ -598,8 +655,9 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
   if (opts.json) {
     // NDJSON: one self-contained record per match. `html` is the exact source
     // slice; newlines are escaped by JSON.stringify, so each record stays on
-    // one line. Ignores --color and -n (line/col are always present).
-    for (const el of targets) {
+    // one line. Ignores --color and -n (line/col are always present). `label`
+    // appears only with -e.
+    for (const { el, label: selLabel } of targets) {
       const off = el.startIndex == null ? 0 : el.startIndex;
       const pos = offsetToPosition(starts, src, off);
       const nodeEnd = (el.endIndex == null ? off : el.endIndex) + 1;
@@ -607,6 +665,7 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
         file: name,
         line: pos.line,
         col: pos.bcol,
+        ...(selLabel !== null && { label: selLabel }),
         html: src.slice(off, nodeEnd),
         text: collapseWs(textOf(el)),
       }));
@@ -614,17 +673,21 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     return targets.length;
   }
   let emitted = 0;
-  for (const el of targets) {
+  for (const { el, label: selLabel } of targets) {
+    const c = opts.colorOn ? paint : (_, s) => s;
+    // The [label] tag from -e; a null label (positional selector) prints none.
+    const tag = selLabel === null ? '' : c(COLORS.label, `[${selLabel}]`) + ' ';
     if (opts.print) {
-      // -p shows the re-indented node only; no line:col locator. With --parent,
-      // the original matched descendants are highlighted inside the container.
+      // -p shows the re-indented node only; no line:col locator (the [label]
+      // tag gets its own line above the block). With --parent, the original
+      // matched descendants are highlighted inside the container.
+      if (tag) out.push(tag.trimEnd());
       out.push(prettyPrint(el, originsByTarget.get(el), opts), ''); // blank separator
       emitted++;
       continue;
     }
     const off = el.startIndex == null ? 0 : el.startIndex;
     const pos = offsetToPosition(starts, src, off);
-    const c = opts.colorOn ? paint : (_, s) => s;
 
     // Choose the content printed for this match. --attr/--text replace the
     // source line with the extracted value (whole value highlighted as the
@@ -651,7 +714,7 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     if (opts.lineNumber) {
       prefix += c(COLORS.line, String(pos.line)) + sep + c(COLORS.line, String(pos.bcol)) + ' ';
     }
-    out.push(prefix + text);
+    out.push(prefix + tag + text);
     emitted++;
   }
   return emitted;
@@ -795,11 +858,271 @@ function looksBinary(buf) {
   return n > 0 && suspicious / n > 0.3;
 }
 
-function main() {
-  const opts = parseArgs(process.argv.slice(2));
-  resolveSelectorAndPaths(opts);
+// --- rewrite output -----------------------------------------------------------
 
-  // Resolve the list of files to search.
+// Myers O(ND) shortest edit script over lines. Only ever runs on the middle
+// slice left after common prefix/suffix trimming, which transform()'s local
+// splices keep small.
+function myersDiff(a, b) {
+  const N = a.length, M = b.length, max = N + M, off = max;
+  if (max === 0) return [];
+  const trace = [];
+  const v = new Array(2 * max + 2).fill(0);
+  let D = -1;
+  for (let d = 0; d <= max && D < 0; d++) {
+    trace.push(v.slice());
+    for (let k = -d; k <= d; k += 2) {
+      let x = (k === -d || (k !== d && v[off + k - 1] < v[off + k + 1]))
+        ? v[off + k + 1]
+        : v[off + k - 1] + 1;
+      let y = x - k;
+      while (x < N && y < M && a[x] === b[y]) { x++; y++; }
+      v[off + k] = x;
+      if (x >= N && y >= M) { D = d; break; }
+    }
+  }
+  const script = [];
+  let x = N, y = M;
+  for (let d = D; d > 0; d--) {
+    const vp = trace[d];
+    const k = x - y;
+    const prevK = (k === -d || (k !== d && vp[off + k - 1] < vp[off + k + 1])) ? k + 1 : k - 1;
+    const prevX = vp[off + prevK], prevY = prevX - prevK;
+    while (x > prevX && y > prevY) { script.push({ t: ' ', l: a[--x] }); y--; }
+    if (x === prevX) script.push({ t: '+', l: b[--y] });
+    else script.push({ t: '-', l: a[--x] });
+  }
+  while (x > 0 && y > 0) { script.push({ t: ' ', l: a[--x] }); y--; }
+  while (x > 0) script.push({ t: '-', l: a[--x] });
+  while (y > 0) script.push({ t: '+', l: b[--y] });
+  return script.reverse();
+}
+
+// Unified diff of two documents, git-apply compatible: ---/+++ headers with
+// a/ b/ prefixes, 3 context lines, merged hunks, and "\ No newline at end of
+// file" markers when a side's last line is unterminated.
+function unifiedDiff(name, oldStr, newStr) {
+  const split = s => {
+    const lines = s.split('\n');
+    const noEol = lines[lines.length - 1] !== '';
+    if (!noEol) lines.pop();
+    return { lines, noEol };
+  };
+  const A = split(oldStr), B = split(newStr);
+  const a = A.lines, b = B.lines;
+  let pre = 0;
+  while (pre < a.length && pre < b.length && a[pre] === b[pre]) pre++;
+  let suf = 0;
+  while (suf < a.length - pre && suf < b.length - pre
+    && a[a.length - 1 - suf] === b[b.length - 1 - suf]) suf++;
+  const script = [
+    ...a.slice(0, pre).map(l => ({ t: ' ', l })),
+    ...myersDiff(a.slice(pre, a.length - suf), b.slice(pre, b.length - suf)),
+    ...a.slice(a.length - suf).map(l => ({ t: ' ', l })),
+  ];
+
+  // Old/new line number sitting *before* each script entry (1-based).
+  const oldPos = [], newPos = [];
+  let ol = 1, nl = 1;
+  for (const s of script) {
+    oldPos.push(ol);
+    newPos.push(nl);
+    if (s.t !== '+') ol++;
+    if (s.t !== '-') nl++;
+  }
+
+  // Group changes into hunks: 3 context lines, merge when gaps are ≤ 6.
+  const C = 3;
+  const hunks = [];
+  let i = 0;
+  while (i < script.length) {
+    if (script[i].t === ' ') { i++; continue; }
+    const hStart = Math.max(0, i - C);
+    let lastChange = i;
+    let j = i + 1;
+    while (j < script.length) {
+      if (script[j].t !== ' ') { lastChange = j; j++; continue; }
+      let k = j;
+      while (k < script.length && script[k].t === ' ') k++;
+      if (k === script.length || k - j > 2 * C) break;
+      j = k;
+    }
+    const hEnd = Math.min(script.length, lastChange + C + 1);
+    hunks.push([hStart, hEnd]);
+    i = hEnd;
+  }
+
+  const out = [`--- a/${name}`, `+++ b/${name}`];
+  for (const [s, e] of hunks) {
+    let oc = 0, nc = 0;
+    for (let k = s; k < e; k++) {
+      if (script[k].t !== '+') oc++;
+      if (script[k].t !== '-') nc++;
+    }
+    const os = oc ? oldPos[s] : oldPos[s] - 1;
+    const ns = nc ? newPos[s] : newPos[s] - 1;
+    out.push(`@@ -${os},${oc} +${ns},${nc} @@`);
+    for (let k = s; k < e; k++) {
+      const { t, l } = script[k];
+      out.push(t + l);
+      const atOldEnd = t !== '+' && oldPos[k] === a.length && A.noEol;
+      const atNewEnd = t !== '-' && newPos[k] === b.length && B.noEol;
+      if (atOldEnd || atNewEnd) out.push('\\ No newline at end of file');
+    }
+  }
+  return out.join('\n') + '\n';
+}
+
+// The rewrite program mode: transform each source and emit the document
+// (single input) or a unified diff (any number of files). Never writes a
+// file — apply diffs with git apply / patch (see ROADMAP Phase 9).
+function rewriteMain(opts, files, useStdin) {
+  if (!useStdin && files.length > 1 && !opts.diff) {
+    fail('rewriting multiple files requires --diff');
+  }
+  const sources = [];
+  if (useStdin) {
+    sources.push({ name: '(standard input)', buf: readStdin() });
+  } else {
+    for (const f of files) {
+      try {
+        sources.push({ name: f, buf: fs.readFileSync(f) });
+      } catch (e) {
+        if (!opts.noMessages) process.stderr.write(`cssgrep: ${f}: ${e.code || e.message}\n`);
+      }
+    }
+  }
+  let totalEdits = 0;
+  const diffs = [];
+  for (const { name, buf } of sources) {
+    // A rewriter must never corrupt bytes it didn't edit: binary input is
+    // never HTML, and a lossy UTF-8 decode written back would mangle every
+    // non-UTF-8 byte in the file — refuse both outright (exit 2).
+    if (looksBinary(buf)) fail(`${name}: binary input; refusing to rewrite`);
+    const src = buf.toString('utf8');
+    if (!Buffer.from(src, 'utf8').equals(buf)) {
+      fail(`${name}: not valid UTF-8; refusing to rewrite`);
+    }
+    let result;
+    try {
+      result = parse(src).transform(opts.selector, { ...opts.rewrite, parent: opts.parent });
+    } catch (e) {
+      if (e && e.message && /selector|tokeniz|parse/i.test(e.message)) {
+        fail(`invalid selector: ${opts.selector}`);
+      }
+      fail(e.message);
+    }
+    totalEdits += result.edits.length;
+    if (opts.diff) {
+      if (result.edits.length) diffs.push(unifiedDiff(name, src, result.html));
+    } else {
+      // Filter-friendly: the document is always emitted, changed or not
+      // (like sed); the exit status says whether anything was edited.
+      process.stdout.write(result.html);
+    }
+  }
+  if (diffs.length) process.stdout.write(diffs.join(''));
+  process.exitCode = totalEdits > 0 ? 0 : 1;
+}
+
+// The watch program mode: rerun the search whenever a watched path changes.
+// Native recursive fs.watch, no polling (see ROADMAP Phase 10; caveat:
+// network/virtual filesystems may not deliver events). Output adapts like
+// --color=auto does: a TTY gets clear+reprint, a pipe gets append mode with
+// `== HH:MM:SS … ==` separators (--no-clear forces append on a TTY), and
+// --json gets an NDJSON stream — {"event":"run",...} then the match records.
+// Runs until SIGINT (exit 0, like watch(1)).
+function watchMain(opts) {
+  const clearMode = !opts.json && !opts.noClear && Boolean(process.stdout.isTTY);
+  const renderOut = out => (!out.length ? ''
+    : opts.nul && (opts.filesWithMatches || opts.filesWithoutMatch)
+      ? out.map(s => s + '\0').join('')
+      : out.join('\n') + '\n');
+
+  const run = changed => {
+    // Re-walk every run: a rerun sees exactly what a fresh invocation would.
+    const { files } = resolveFiles(opts);
+    const out = [];
+    let total = 0;
+    try {
+      total = searchFiles(opts, files, out);
+    } catch (e) {
+      if (e && e.message && /selector|tokeniz|parse/i.test(e.message)) {
+        fail(`invalid selector: ${opts.selector != null
+          ? opts.selector
+          : opts.selectors.map(s => s.selector).join(', ')}`);
+      }
+      fail(e.message);
+    }
+    if (opts.json) {
+      process.stdout.write(JSON.stringify({
+        event: 'run',
+        changed: changed || null,
+        matches: total,
+      }) + '\n' + renderOut(out));
+    } else if (clearMode) {
+      process.stdout.write('\x1b[2J\x1b[H' + (out.length ? renderOut(out) : 'cssgrep: no matches\n'));
+    } else {
+      const ts = new Date().toTimeString().slice(0, 8);
+      process.stdout.write(`== ${ts} ${changed || 'watching'} ==\n` + renderOut(out));
+    }
+  };
+
+  // Debounce change bursts (editors often fire several events per save).
+  let timer = null;
+  let pending = null;
+  const schedule = changed => {
+    pending = changed;
+    clearTimeout(timer);
+    timer = setTimeout(() => { const c = pending; pending = null; run(c); }, 80);
+  };
+
+  // Directory targets get one recursive watcher each. Explicit file targets
+  // are watched via their parent directory, filtered by name — editors often
+  // save by rename-replace, which would orphan a watcher on the file itself.
+  const watchers = [];
+  const fileTargets = new Map();              // parent dir -> Set of basenames
+  const targets = opts.paths.length ? opts.paths : ['.'];
+  for (const p of targets) {
+    const st = fs.statSync(p, { throwIfNoEntry: false });
+    if (!st) {
+      if (!opts.noMessages) process.stderr.write(`cssgrep: ${p}: no such file or directory\n`);
+      continue;
+    }
+    if (st.isDirectory()) {
+      watchers.push(fs.watch(p, { recursive: true },
+        (ev, f) => schedule(f ? path.join(p, f) : p)));
+    } else {
+      const dir = path.dirname(p);
+      if (!fileTargets.has(dir)) fileTargets.set(dir, new Set());
+      fileTargets.get(dir).add(path.basename(p));
+    }
+  }
+  for (const [dir, bases] of fileTargets) {
+    watchers.push(fs.watch(dir,
+      (ev, f) => { if (!f || bases.has(f)) schedule(f ? path.join(dir, f) : dir); }));
+  }
+  if (!watchers.length) fail('--watch: nothing to watch');
+  for (const w of watchers) {
+    w.on('error', e => {
+      if (!opts.noMessages) process.stderr.write(`cssgrep: watch: ${e.message}\n`);
+    });
+  }
+
+  process.on('SIGINT', () => {
+    for (const w of watchers) w.close();
+    clearTimeout(timer);
+    process.exitCode = 0;                     // watch(1) convention
+  });
+
+  run(null);                                  // initial pass, then wait
+}
+
+// Resolve the paths to search into a concrete file list (or stdin). Watch
+// mode calls this again on every rerun, so a rerun sees exactly what a fresh
+// invocation would: new files picked up per the include/ignore/--ext rules,
+// deleted ones dropped.
+function resolveFiles(opts) {
   let files = [];
   let useStdin = false;
   if (opts.recursive) {
@@ -816,18 +1139,63 @@ function main() {
   } else {
     useStdin = true;
   }
+  return { files, useStdin };
+}
 
+// One search pass over a file list; appends output lines to `out` and returns
+// the match total. Shared by the single-shot main path and each watch rerun.
+function searchFiles(opts, files, out) {
   // A label (file prefix) is shown when searching more than one file; -H forces
   // it on (even for one file or stdin) and --no-filename forces it off.
+  const showLabel = opts.withFilename ? true
+    : opts.noFilename ? false
+    : files.length > 1;
+  let total = 0;
+  // -M/--max-total: remaining matches allowed across all files (Infinity = off).
+  const room = () => (opts.maxTotal ? Math.max(0, opts.maxTotal - total) : Infinity);
+  for (const f of files) {
+    if (room() <= 0) break;               // -M: global budget exhausted
+    let buf;
+    try {
+      buf = fs.readFileSync(f);           // Buffer: sniff before decoding
+    } catch (e) {
+      if (!opts.noMessages) process.stderr.write(`cssgrep: ${f}: ${e.code || e.message}\n`);
+      continue;
+    }
+    if (looksBinary(buf)) {
+      if (!opts.noMessages && !opts.quiet) {
+        process.stderr.write(`cssgrep: ${f}: binary file (skipped)\n`);
+      }
+      continue;
+    }
+    total += searchSource(buf.toString('utf8'), f, showLabel, opts, out, room());
+    if (opts.quiet && total > 0) break;   // -q: first match decides the status
+  }
+  return total;
+}
+
+function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  resolveSelectorAndPaths(opts);
+
+  const { files, useStdin } = resolveFiles(opts);
+
+  if (opts.rewriteActive) {
+    rewriteMain(opts, files, useStdin);
+    return;
+  }
+  if (opts.watch) {
+    if (useStdin) fail('--watch requires file or directory paths');
+    watchMain(opts);
+    return;
+  }
+
   const showLabel = opts.withFilename ? true
     : opts.noFilename ? false
     : (!useStdin && files.length > 1);
 
   const out = [];
   let total = 0;
-
-  // -M/--max-total: remaining matches allowed across all files (Infinity = off).
-  const room = () => (opts.maxTotal ? Math.max(0, opts.maxTotal - total) : Infinity);
 
   try {
     if (useStdin) {
@@ -837,31 +1205,18 @@ function main() {
           process.stderr.write('cssgrep: (standard input): binary input (skipped)\n');
         }
       } else {
-        total += searchSource(buf.toString('utf8'), '(standard input)', showLabel, opts, out, room());
+        total += searchSource(buf.toString('utf8'), '(standard input)', showLabel, opts, out,
+          opts.maxTotal || Infinity);
       }
     } else {
-      for (const f of files) {
-        if (room() <= 0) break;               // -M: global budget exhausted
-        let buf;
-        try {
-          buf = fs.readFileSync(f);           // Buffer: sniff before decoding
-        } catch (e) {
-          if (!opts.noMessages) process.stderr.write(`cssgrep: ${f}: ${e.code || e.message}\n`);
-          continue;
-        }
-        if (looksBinary(buf)) {
-          if (!opts.noMessages && !opts.quiet) {
-            process.stderr.write(`cssgrep: ${f}: binary file (skipped)\n`);
-          }
-          continue;
-        }
-        total += searchSource(buf.toString('utf8'), f, showLabel, opts, out, room());
-        if (opts.quiet && total > 0) break;   // -q: first match decides the status
-      }
+      total = searchFiles(opts, files, out);
     }
   } catch (e) {
     if (e && e.message && /selector|tokeniz|parse/i.test(e.message)) {
-      fail(`invalid selector: ${opts.selector}`);
+      const shown = opts.selector != null
+        ? opts.selector
+        : opts.selectors.map(s => s.selector).join(', ');
+      fail(`invalid selector: ${shown}`);
     }
     fail(e.message);
   }

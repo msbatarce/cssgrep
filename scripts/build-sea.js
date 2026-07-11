@@ -38,7 +38,7 @@ async function main() {
   //    CJS file. SEA's main script cannot require() out of node_modules, so
   //    everything must be inlined first.
   esbuild.buildSync({
-    entryPoints: [path.join(root, 'index.js')],
+    entryPoints: [path.join(root, 'cli.js')],
     bundle: true,
     platform: 'node',
     format: 'cjs',

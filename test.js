@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 
-const CLI = path.join(__dirname, 'index.js');
+const CLI = path.join(__dirname, 'cli.js');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cssgrep-'));
 let failures = 0;
 
@@ -914,6 +914,341 @@ check('-r walks in sorted order for deterministic output', () => {
   // multi.html sorts before sub/nested.html; readdir order must not leak through.
   const { stdout } = run(['div.a', '-r', '-l', tmp]);
   assert.deepStrictEqual(stdout.trimEnd().split('\n'), [fMulti, fNested]);
+});
+
+// --- inversion recipes --------------------------------------------------------
+// There is deliberately no -v flag; the README/man document :not()/:has()
+// recipes instead (see ROADMAP Phase 7). These pin the recipes to shipped
+// css-select behavior so the docs can't silently rot.
+const invHtml = [
+  '<body>',
+  '<nav><a href="/home">home</a></nav>',
+  '<div class="card"><a href="/x">buy</a></div>',
+  '<div class="card"><span>no link</span></div>',
+  '<img src="a.png" alt="ok"><img src="b.png">',
+  '<footer><a href="/legal">legal</a></footer>',
+  '</body>',
+].join('\n');
+
+check('recipe: img:not([alt]) finds images missing alt', () => {
+  const { stdout } = run(['img:not([alt])', '--attr', 'src'], { input: invHtml });
+  assert.strictEqual(stdout.trimEnd(), 'b.png');
+});
+
+check('recipe: :not(:has(...)) finds containers lacking a descendant', () => {
+  const { stdout } = run(['div.card:not(:has(a))', '--text'], { input: invHtml });
+  assert.strictEqual(stdout.trimEnd(), 'no link');
+});
+
+check('recipe: :not() takes a selector list with complex selectors', () => {
+  const { stdout } = run(['a:not(nav a, footer a)', '--text'], { input: invHtml });
+  assert.strictEqual(stdout.trimEnd(), 'buy');
+});
+
+check('-v / --invert-match fail with a pointer to the :not()/:has() recipes', () => {
+  for (const flag of ['-v', '--invert-match']) {
+    const r = spawnSync('node', [CLI, 'div', flag], { input: '<div>x</div>', encoding: 'utf8' });
+    assert.strictEqual(r.status, 2);
+    assert.ok(r.stderr.includes('no invert-match'), `${flag}: expected the teaching message`);
+    assert.ok(r.stderr.includes(':not('), `${flag}: expected a recipe pointer`);
+  }
+});
+
+// --- multiple selectors (-e) --------------------------------------------------
+const multiSel = '<html><body><h1>Widget</h1><div class="card">'
+  + '<span class="price">$4.99</span><a href="/buy">buy</a></div></body></html>';
+
+check('-e: matches merge in document order, tagged [label]', () => {
+  const { stdout } = run(['-n', '-e', 'title=h1', '-e', 'price=.card .price'], { input: multiSel });
+  const lines = stdout.trimEnd().split('\n');
+  assert.strictEqual(lines.length, 2);
+  assert.ok(lines[0].startsWith('1:13 [title] '), lines[0]);
+  assert.ok(lines[1].startsWith('1:46 [price] '), lines[1]);
+});
+
+check('-e: an unlabeled selector is tagged with its own text', () => {
+  const { stdout } = run(['--text', '-e', 'h1'], { input: multiSel });
+  assert.strictEqual(stdout.trimEnd(), '[h1] Widget');
+});
+
+check('-e: a leading attribute selector is not mistaken for a label', () => {
+  const { stdout } = run(['--text', '-e', '[href]'], { input: multiSel });
+  assert.strictEqual(stdout.trimEnd(), '[[href]] buy');
+});
+
+check('-e: --json records carry the label; without -e they do not', () => {
+  const labeled = JSON.parse(run(['--json', '-e', 'price=.price'], { input: multiSel }).stdout.trim());
+  assert.strictEqual(labeled.label, 'price');
+  assert.strictEqual(labeled.text, '$4.99');
+  const plain = JSON.parse(run(['--json', '.price'], { input: multiSel }).stdout.trim());
+  assert.ok(!('label' in plain));
+});
+
+check('-e: -m caps the merged document-order stream, not each selector', () => {
+  const { stdout } = run(
+    ['--text', '-m', '2', '-e', 'title=h1', '-e', 'price=.price', '-e', 'link=a'],
+    { input: multiSel });
+  assert.deepStrictEqual(stdout.trimEnd().split('\n'), ['[title] Widget', '[price] $4.99']);
+});
+
+check('-e: a node matching two selectors emits once per selector, in -e order', () => {
+  const { stdout } = run(['--text', '-e', 'x=.price', '-e', 'y=span'], { input: multiSel });
+  assert.deepStrictEqual(stdout.trimEnd().split('\n'), ['[x] $4.99', '[y] $4.99']);
+});
+
+check('-e: --parent dedups per (ancestor, label)', () => {
+  const { stdout } = run(['--text', '-e', 'p1=.price', '-e', 'p2=a', '--parent', '1'],
+    { input: multiSel });
+  assert.deepStrictEqual(stdout.trimEnd().split('\n'), ['[p1] $4.99buy', '[p2] $4.99buy']);
+});
+
+check('-e: positionals are file paths, like grep -e', () => {
+  const { stdout } = run(['-e', 'got=div.a', '--text', fMulti]);
+  assert.deepStrictEqual(stdout.trimEnd().split('\n'), ['[got] one', '[got] three']);
+});
+
+// --- library API (lib.js) ----------------------------------------------------
+// The lib is consumed in-process: require('cssgrep') must expose parse()
+// without executing the CLI (which is what the old index.js did on require).
+const { parse } = require('./lib.js');
+
+check('lib: parse once, matches carry positions', () => {
+  const matches = parse(multiline).search('div.a');
+  assert.strictEqual(matches.length, 2);
+  const m = matches[0];
+  assert.strictEqual(m.line, 4);
+  assert.strictEqual(m.col, 5);
+  assert.strictEqual(m.tag, 'div');
+  assert.deepStrictEqual(m.attribs, { class: 'a' });
+  assert.strictEqual(m.html, '<div class="a">one</div>');
+  assert.strictEqual(m.text, 'one');
+  assert.strictEqual(multiline.slice(m.start, m.end), m.html);
+});
+
+check('lib: one document handle serves many searches', () => {
+  const doc = parse(multiline);
+  assert.strictEqual(doc.search('div.a').length, 2);
+  assert.strictEqual(doc.search('p#x')[0].text, 'two');
+  assert.strictEqual(doc.search('.nope').length, 0);
+  assert.strictEqual(doc.html, multiline);
+});
+
+check('lib: col counts bytes, like the CLI -n locator', () => {
+  const m = parse('<p>é<b>x</b></p>').search('b')[0];
+  assert.strictEqual(m.line, 1);
+  assert.strictEqual(m.col, 6); // "<p>é" is 5 bytes in UTF-8, so <b> starts at byte col 6
+});
+
+check('lib: lazy match fields survive JSON.stringify; node stays out of it', () => {
+  const m = JSON.parse(JSON.stringify(parse(minified).search('.hit')[0]));
+  assert.strictEqual(m.html, '<span class="hit">a</span>');
+  assert.strictEqual(m.text, 'a');
+  assert.strictEqual(m.line, 1);
+  assert.ok(!('node' in m), 'circular node reference must not serialize');
+});
+
+check('lib: node escape hatch exposes the raw htmlparser2 element', () => {
+  const m = parse(minified).search('.hit')[0];
+  assert.strictEqual(m.node.name, 'span');
+  assert.strictEqual(m.node.startIndex, m.start);
+});
+
+check('lib: opts.parent retargets to the deduped ancestor', () => {
+  const matches = parse(minified).search('.hit', { parent: 1 });
+  assert.strictEqual(matches.length, 1); // both spans share the one div
+  assert.strictEqual(matches[0].tag, 'div');
+});
+
+check('lib: throws on an invalid selector and on non-string input', () => {
+  const doc = parse(minified);
+  assert.throws(() => doc.search('div['));
+  assert.throws(() => doc.search(''), TypeError);
+  assert.throws(() => parse(null), TypeError);
+});
+
+// --- rewrite mode (lib transform + CLI) ----------------------------------------
+
+check('transform: class ops splice only the matched tag', () => {
+  const doc = parse('<i>é</i><div class="a" title=\'q\'>x</div>');
+  const { html, edits } = doc.transform('div', { addClass: 'b' });
+  assert.strictEqual(html, '<i>é</i><div class="a b" title=\'q\'>x</div>');
+  assert.strictEqual(edits.length, 1);
+  assert.strictEqual(doc.html.slice(edits[0].start, edits[0].end), edits[0].before);
+  assert.strictEqual(edits[0].after, '<div class="a b" title=\'q\'>');
+});
+
+check('transform: add-class dedups, remove-class drops an emptied attribute', () => {
+  const doc = parse('<div class="a">x</div>');
+  assert.strictEqual(doc.transform('div', { addClass: 'a' }).edits.length, 0);
+  assert.strictEqual(doc.transform('div', { removeClass: 'a' }).html, '<div>x</div>');
+});
+
+check('transform: set-attr replaces, adds, and escapes; remove-attr takes duplicates', () => {
+  const doc = parse('<a href=/old style="x" STYLE="y">go</a>');
+  const r = doc.transform('a', { setAttr: { href: '/n', 'data-t': 'a"b&c' }, removeAttr: 'style' });
+  assert.strictEqual(r.html, '<a href="/n" data-t="a&quot;b&amp;c">go</a>');
+});
+
+check('transform: quoted ">" in an attribute value does not end the tag', () => {
+  const r = parse('<div title="a>b">x</div>').transform('div', { addClass: 'c' });
+  assert.strictEqual(r.html, '<div title="a>b" class="c">x</div>');
+});
+
+check('transform: fixed pipeline order — remove-attr class then add-class', () => {
+  const r = parse('<div class="a b">x</div>')
+    .transform('div', { addClass: 'x', removeAttr: 'class' });
+  assert.strictEqual(r.html, '<div class="x">x</div>');
+});
+
+check('transform: rename-tag edits both tags, nested matches stay disjoint', () => {
+  const r = parse('<div><div>x</div></div>').transform('div', { renameTag: 'section' });
+  assert.strictEqual(r.html, '<section><section>x</section></section>');
+  assert.strictEqual(r.edits.length, 4);
+});
+
+check('transform: rename-tag never invents a closing tag (void/self-closing/implied)', () => {
+  const r = parse('<img src=x><br/><ul><li>a<li>b</ul>')
+    .transform('img, br, li', { renameTag: 'x' });
+  assert.strictEqual(r.html, '<x src=x><x/><ul><x>a<x>b</ul>');
+});
+
+check('transform: throws on empty ops, unknown op, bad names', () => {
+  const doc = parse('<b>x</b>');
+  assert.throws(() => doc.transform('b', {}), TypeError);
+  assert.throws(() => doc.transform('b', { addClas: 'x' }), TypeError);
+  assert.throws(() => doc.transform('b', { renameTag: 'a b' }), TypeError);
+  assert.throws(() => doc.transform('b', { addClass: 'a"b' }), TypeError);
+});
+
+const rwDoc = '<html>\n<body>\n<div class="card old">one</div>\n<p>keep</p>\n</body>\n</html>\n';
+
+check('rewrite CLI: emits the edited document, other bytes untouched', () => {
+  const { stdout, status } = run(['.old', '--remove-class', 'old', '--add-class', 'fresh'],
+    { input: rwDoc });
+  assert.strictEqual(status, 0);
+  assert.strictEqual(stdout, rwDoc.replace('class="card old"', 'class="card fresh"'));
+});
+
+check('rewrite CLI: no match passes the document through with exit 1', () => {
+  const { stdout, status } = run(['.nope', '--add-class', 'x'], { input: rwDoc, expectStatus: 1 });
+  assert.strictEqual(status, 1);
+  assert.strictEqual(stdout, rwDoc);
+});
+
+check('rewrite CLI: --diff emits a unified diff that git apply accepts', () => {
+  const dir = fs.mkdtempSync(path.join(tmp, 'rw-'));
+  fs.writeFileSync(path.join(dir, 'p.html'), '<b class=x>no newline</b>'); // also: no EOL
+  const diff = spawnSync('node', [CLI, 'b', '--add-class', 'y', '--diff', 'p.html'],
+    { cwd: dir, encoding: 'utf8' });
+  assert.strictEqual(diff.status, 0);
+  assert.ok(diff.stdout.startsWith('--- a/p.html\n+++ b/p.html\n'), diff.stdout);
+  assert.ok(diff.stdout.includes('\\ No newline at end of file'));
+  const git = spawnSync('git', ['apply', '-'], { cwd: dir, input: diff.stdout, encoding: 'utf8' });
+  if (git.error && git.error.code === 'ENOENT') return; // no git on this machine: skip
+  assert.strictEqual(git.status, 0, git.stderr);
+  assert.strictEqual(fs.readFileSync(path.join(dir, 'p.html'), 'utf8'),
+    '<b class="x y">no newline</b>');
+});
+
+check('rewrite CLI: multiple files require --diff; --diff covers them all', () => {
+  const dir = fs.mkdtempSync(path.join(tmp, 'rw-'));
+  for (const n of ['m1.html', 'm2.html']) fs.writeFileSync(path.join(dir, n), '<b>x</b>\n');
+  const bare = spawnSync('node', [CLI, 'b', '--add-class', 'z', 'm1.html', 'm2.html'],
+    { cwd: dir, encoding: 'utf8' });
+  assert.strictEqual(bare.status, 2);
+  const diff = spawnSync('node', [CLI, 'b', '--add-class', 'z', '--diff', 'm1.html', 'm2.html'],
+    { cwd: dir, encoding: 'utf8' });
+  assert.strictEqual(diff.status, 0);
+  assert.strictEqual((diff.stdout.match(/^\+\+\+ /gm) || []).length, 2);
+});
+
+check('rewrite CLI: refuses non-UTF-8 input with exit 2', () => {
+  const r = spawnSync('node', [CLI, 'b', '--add-class', 'x'],
+    { input: Buffer.from([0x3c, 0x62, 0x3e, 0xff, 0x3c, 0x2f, 0x62, 0x3e]) });
+  assert.strictEqual(r.status, 2);
+  assert.ok(String(r.stderr).includes('not valid UTF-8'));
+});
+
+check('rewrite CLI: rejects print/aggregate/-e/-m combinations', () => {
+  for (const extra of [['--json'], ['-c'], ['-n'], ['-m', '1'], ['-e', 'x=b']]) {
+    const r = spawnSync('node', [CLI, 'b', '--add-class', 'x', ...extra],
+      { input: '<b>x</b>', encoding: 'utf8' });
+    assert.strictEqual(r.status, 2, `${extra.join(' ')} should be rejected`);
+  }
+});
+
+check('rewrite CLI: --parent retargets the edit to the container', () => {
+  const { stdout } = run(['.price', '--add-class', 'sale', '--parent', '1'],
+    { input: '<div class="card"><span class="price">4</span></div>' });
+  assert.strictEqual(stdout, '<div class="card sale"><span class="price">4</span></div>');
+});
+
+// --- watch mode ----------------------------------------------------------------
+// Watch runs forever, so these spawn an async Node driver that starts the
+// watcher, mutates files on a timer, SIGINTs it, and reports what it saw.
+// Timings are generous to absorb slow CI filesystems.
+function driveWatch(dir, cliArgs, mutations) {
+  const driver = `
+    const { spawn } = require('child_process');
+    const fs = require('fs');
+    const c = spawn(process.execPath, ${JSON.stringify([CLI, ...cliArgs])},
+      { stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '', err = '';
+    c.stdout.on('data', d => out += d);
+    c.stderr.on('data', d => err += d);
+    ${mutations.map(([ms, file, content]) =>
+    `setTimeout(() => fs.writeFileSync(${JSON.stringify(file)}, ${JSON.stringify(content)}), ${ms});`
+  ).join('\n')}
+    setTimeout(() => c.kill('SIGINT'), 1600);
+    c.on('exit', code => console.log(JSON.stringify({ code, out, err })));
+  `;
+  const r = spawnSync('node', ['-e', driver], { cwd: dir, encoding: 'utf8', timeout: 15000 });
+  return JSON.parse(r.stdout);
+}
+
+check('--watch: reruns on change, discovers new files, SIGINT exits 0', () => {
+  const dir = fs.mkdtempSync(path.join(tmp, 'watch-'));
+  fs.writeFileSync(path.join(dir, 'a.html'), '<div class="err">one</div>\n');
+  const r = driveWatch(dir, ['.err', '--watch', '-rn', '.'], [
+    [500, 'a.html', '<p>fixed</p>\n'],                    // match disappears
+    [1000, 'fresh.html', '<b class="err">new</b>\n'],     // re-walk must find it
+  ]);
+  const runs = r.out.split(/^== .*==$/m).filter(s => s.trim() !== '');
+  assert.ok(r.out.includes('<div class="err">one</div>'), 'initial run output');
+  assert.ok(r.out.includes('fresh.html:1:1'), 'new file discovered and matched');
+  assert.ok(/== \d\d:\d\d:\d\d watching ==/.test(r.out), 'append-mode separator (piped)');
+  assert.ok(!r.out.includes('\x1b[2J'), 'no clear codes into a pipe');
+  assert.ok(runs.length >= 2, 'at least initial + one rerun');
+  if (process.platform !== 'win32') assert.strictEqual(r.code, 0, r.err); // SIGINT → 0
+});
+
+check('--watch --json: NDJSON run events precede match records', () => {
+  const dir = fs.mkdtempSync(path.join(tmp, 'watch-'));
+  fs.writeFileSync(path.join(dir, 'a.html'), '<div class="err">one</div>\n');
+  const r = driveWatch(dir, ['.err', '--watch', '-r', '--json', '.'], [
+    [500, 'a.html', '<div class="err">one</div><div class="err">two</div>\n'],
+  ]);
+  const events = r.out.trim().split('\n').map(l => JSON.parse(l));
+  const runs = events.filter(e => e.event === 'run');
+  assert.ok(runs.length >= 2, 'initial + rerun events');
+  assert.strictEqual(runs[0].changed, null);
+  assert.strictEqual(runs[0].matches, 1);
+  assert.strictEqual(runs[runs.length - 1].matches, 2);
+  assert.ok(events.some(e => e.text === 'two'), 'match records follow the events');
+});
+
+check('--watch validation: -q, rewrite ops, stdin, --no-clear misuse rejected', () => {
+  const cases = [
+    [['div', '--watch', '-q', fMulti]],
+    [['div', '--watch', '--add-class', 'x', fMulti]],
+    [['div', '--watch']],                                  // stdin: nothing to watch
+    [['div', '--no-clear', fMulti]],                       // --no-clear needs --watch
+    [['div', '--watch', '--no-clear', '--json', fMulti]],
+  ];
+  for (const [args] of cases) {
+    const r = spawnSync('node', [CLI, ...args], { input: '', encoding: 'utf8' });
+    assert.strictEqual(r.status, 2, `${args.join(' ')} should exit 2: ${r.stderr}`);
+  }
 });
 
 // --- teardown ---------------------------------------------------------------

@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-07-07
+
+### Added
+- `--watch`: re-run the search whenever a watched file changes (native
+  recursive file events, no polling; debounced; every rerun repeats the full
+  walk so new files appear under the same include/ignore rules). Output
+  adapts like `--color=auto`: a TTY clears and reprints (`--no-clear` to
+  append instead), pipes get `== HH:MM:SS ==` run separators, and `--json`
+  becomes an NDJSON stream of `{"event":"run",…}` records followed by
+  matches. Ctrl-C exits 0.
+- Rewrite mode: `--add-class`, `--remove-class`, `--set-attr k=v`,
+  `--remove-attr` and `--rename-tag` edit the matched elements instead of
+  reporting them. Byte-splice fidelity: only the matched tags' bytes change.
+  A single input prints the rewritten document to stdout; `--diff` emits a
+  git-apply-able unified diff (required for multiple files) — cssgrep never
+  writes a file. Ops compose in a fixed order regardless of argv order;
+  non-UTF-8 input is refused. Also exposed to library consumers as
+  `doc.transform(selector, ops)` returning `{ html, edits }`.
+- `-e`/`--selector [label=]<sel>` (repeatable): search several selectors in
+  one pass, each match tagged `[label]` in line mode and carrying a `label`
+  field in `--json`. Unlabeled selectors are tagged with their own text.
+  Matches merge in document order; `-m`/`-M` cap the merged stream. With
+  `-e`, positional arguments are always file paths, like `grep -e`.
+- An "Inverting matches" section in the README and man page: `:not()` (with
+  selector lists) and `:has()` recipes covering what grep's `-v` does, pinned
+  by tests. Decided against adding a `-v` flag — the selector already names
+  the inversion universe; see `ROADMAP.md` Phase 7 for the analysis.
+- `-v`/`--invert-match` now fail with a message pointing at the `:not()`/
+  `:has()` recipes (still exit 2), instead of a generic "unknown option".
+- Library API: `require('cssgrep')` now exposes `parse(html)`, which parses
+  once (source positions, cached line index) and returns a document handle;
+  `doc.search(selector, opts)` runs any number of selectors against the same
+  tree — the CLI is built on it, so `-e` never re-parses. Matches are plain
+  objects with source positions (`start`/`end` offsets, 1-based `line`,
+  byte-accurate `col`, `tag`, `attribs`, `html`, `text` — the last four lazy)
+  plus the raw htmlparser2 element as a non-enumerable `node` escape hatch,
+  so records `JSON.stringify` cleanly. `opts.parent` mirrors the CLI's
+  `--parent`. TypeScript definitions ship as `index.d.ts`.
+
+### Changed
+- The package was split into `lib.js` (library) and `cli.js` (the `cssgrep`
+  bin); `index.js` is gone. Requiring the package no longer executes the CLI.
+  The CLI itself is unchanged.
+
 ## [1.2.0] - 2026-07-02
 
 ### Added
@@ -64,7 +108,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `-0`/`--null`, `--color`, `-w`/`--max-width`, `-V`/`--version`.
 - Standalone binaries (Bun, Node SEA), shell completions, and a man page.
 
-[Unreleased]: https://github.com/msbatarce/cssgrep/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/msbatarce/cssgrep/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/msbatarce/cssgrep/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/msbatarce/cssgrep/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/msbatarce/cssgrep/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/msbatarce/cssgrep/releases/tag/v1.0.0

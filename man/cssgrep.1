@@ -1,6 +1,6 @@
 .\" Man page for cssgrep. Keep the OPTIONS section in sync with the USAGE
-.\" string in index.js.
-.TH CSSGREP 1 "2026-07-02" "cssgrep 1.2.0" "User Commands"
+.\" string in cli.js.
+.TH CSSGREP 1 "2026-07-07" "cssgrep 1.3.0" "User Commands"
 .SH NAME
 cssgrep \- search HTML by CSS selector, grep-style
 .SH SYNOPSIS
@@ -12,6 +12,13 @@ cssgrep \- search HTML by CSS selector, grep-style
 .I selector
 .B \-r
 .IR dir ...
+.br
+.B cssgrep
+.B \-e
+.RI \(aq[ label =] sel \(aq
+.RB [ \-e
+\&...]
+.RI [ file ...]
 .br
 .B cat
 .I file.html
@@ -49,6 +56,31 @@ prefix is added when searching multiple files, and the
 locator appears only with
 .BR \-n .
 .SH OPTIONS
+.TP
+.BR \-e ", " \-\-selector " [\fIlabel\fR=]\fIsel\fR"
+Add a selector (repeatable). Matches from all
+.B \-e
+selectors merge into one document-order stream, each tagged
+.RI [ label ]
+in the output (and as a
+.I label
+field with
+.BR \-\-json ).
+An unlabeled selector is tagged with its own text. A label is an identifier
+before a
+.BR = ;
+a
+.B =
+outside brackets is never valid CSS, so attribute selectors like
+.I [href=x]
+are never mistaken for labels.
+.B \-m
+and
+.B \-M
+cap the merged stream, and print modes apply to every selector alike. With
+.BR \-e ,
+every positional argument is a file path, as with
+.BR "grep \-e" .
 .TP
 .BR \-r ", " \-\-recursive
 Recurse into directory arguments (defaults to the current directory if none
@@ -126,7 +158,11 @@ Print the matched node's text content, whitespace collapsed.
 .TP
 .B \-\-json
 Print one JSON object per match (NDJSON) with
-.IR file ", " line ", " col ", " html ", " text .
+.IR file ", " line ", " col ", " html ", " text
+(plus
+.I label
+with
+.BR \-e ).
 .TP
 .BI \-\-parent " n"
 Report the
@@ -232,10 +268,94 @@ Globs for
 support
 .BR * " (within a path segment), " ** " (across " / ),
 .BR ? " (one non-slash char), and brace alternation like " *.{html,htm} .
+.SH WATCH MODE
+.TP
+.B \-\-watch
+Keep running and repeat the search whenever a watched file changes. Requires
+file or directory arguments (standard input cannot be watched); cannot be
+combined with
+.B \-q
+or the rewrite operations. Runs until interrupted; Ctrl-C exits with
+status 0, like
+.BR watch (1).
+.TP
+.B \-\-no\-clear
+With
+.B \-\-watch
+on a terminal: append run results instead of clearing the screen.
+.PP
+Output adapts to its destination, like
+.BR \-\-color=auto :
+on a terminal each run clears the screen and reprints; piped output contains
+no escape codes and appends each run after a
+.RI \(dq== " HH:MM:SS changed-file " ==\(dq
+separator; with
+.B \-\-json
+each rerun emits an NDJSON
+.I {"event":"run","changed":...,"matches":n}
+record followed by the match records.
+.PP
+Every rerun repeats the full directory walk, so new files are discovered (and
+deleted ones dropped) under the same
+.BR \-\-include / \-\-ignore / \-\-ext
+rules as a fresh invocation; change bursts are debounced. Watching uses the
+operating system's native file events (no polling), which may be unreliable
+on network or virtual filesystems.
+.SH REWRITING
+Five repeatable, freely combinable operations edit the matched elements
+instead of reporting them:
+.TP
+.BI \-\-add\-class " c"
+Add a class to each matched element (deduplicated; attribute created if
+missing).
+.TP
+.BI \-\-remove\-class " c"
+Remove a class; the attribute is dropped when emptied.
+.TP
+.BI \-\-set\-attr " k=v"
+Set attribute
+.I k
+to
+.IR v ,
+adding it if missing. The value is escaped.
+.TP
+.BI \-\-remove\-attr " k"
+Remove attribute
+.I k
+(all source occurrences).
+.TP
+.BI \-\-rename\-tag " t"
+Rename the element \(em its closing tag too, when one explicitly exists
+(voids like
+.IR <img> ,
+self-closing and implied closes are left without one).
+.TP
+.B \-\-diff
+Emit a unified diff instead of the rewritten document. Required for multiple
+files; apply with
+.BR git-apply (1)
+or
+.BR patch (1).
+.PP
+Only the matched tags' bytes change: matching runs once against the original
+document and edits are byte-splices, so quoting, entities and formatting
+everywhere else pass through untouched. Operations compose in a fixed order
+\(em rename \(-> remove-attr \(-> set-attr \(-> remove-class \(-> add-class
+\(em regardless of argument order.
+.B \-\-parent
+composes with rewriting. A single input prints the rewritten document to
+standard output;
+.B cssgrep
+never writes a file. Input that is not valid UTF-8 is refused (exit 2).
+Rewriting cannot be combined with
+.BR \-n ", " \-p ", " \-\-attr ", " \-\-text ", " \-\-json ", " \-c ", "
+.BR \-l ", " \-L ", " \-q ", " \-A / \-B / \-C ", " \-m / \-M ", " \-w ", "
+.BR \-0 " or " \-e .
+Exit status: 0 if anything was edited, 1 if nothing matched, 2 on error.
 .SH EXIT STATUS
 .TP
 .B 0
-One or more matches were found.
+One or more matches were found (or, when rewriting, edits were made).
 .TP
 .B 1
 No matches were found.
@@ -255,6 +375,31 @@ Recurse a tree, skipping vendored files:
 .TP
 Extract attribute values for scripting:
 .B cssgrep \-\-attr href "a.external" page.html
+.TP
+Scrape several labeled fields in one pass:
+.B cssgrep \-e "title=h1" \-e "price=.card .price" \-\-json page.html
+.TP
+Rename every <b> to <strong> across a tree, review, then apply:
+.B cssgrep b \-\-rename\-tag strong \-r src/ \-\-diff | git apply
+.SH INVERTING MATCHES
+There is no
+.B \-v
+flag: CSS expresses inversion in the selector itself via
+.BR :not() " (complex selectors and selector lists included) and " :has() ,
+scoped to the elements of interest \(em a flag would have to invent its own
+answer to \(lqwhich non-matching elements?\(rq.
+.TP
+Images missing alt text:
+.B cssgrep \(dqimg:not([alt])\(dq \-rn .
+.TP
+Cards containing no link:
+.B cssgrep \(dqdiv.card:not(:has(a))\(dq page.html
+.TP
+Links outside nav and footer:
+.B cssgrep \(dqa:not(nav a, footer a)\(dq page.html
+.PP
+For whole files without any match, use
+.BR \-L .
 .SH VIM INTEGRATION
 Wire
 .B cssgrep

@@ -1,6 +1,15 @@
 # fish completion for cssgrep. Keep in sync with the USAGE string in index.js.
 # Install: place this file in ~/.config/fish/completions/ (named cssgrep.fish).
 
+complete -c cssgrep -s e -l selector -x -d 'Add a [label=]selector (repeatable)'
+complete -c cssgrep -l add-class -x -d 'Rewrite: add a class to matched elements'
+complete -c cssgrep -l remove-class -x -d 'Rewrite: remove a class (attr dropped when empty)'
+complete -c cssgrep -l set-attr -x -d 'Rewrite: set attribute (name=value)'
+complete -c cssgrep -l remove-attr -x -d 'Rewrite: remove an attribute'
+complete -c cssgrep -l rename-tag -x -d 'Rewrite: rename the element (and closing tag)'
+complete -c cssgrep -l diff -d 'Emit a unified diff instead of the document'
+complete -c cssgrep -l watch -d 'Re-run the search whenever a watched file changes'
+complete -c cssgrep -l no-clear -d 'With --watch on a TTY: append instead of clearing'
 complete -c cssgrep -s r -l recursive -d 'Recurse into directory arguments'
 complete -c cssgrep -l max-depth -x -d 'Limit -r recursion depth (1 = given dir only)'
 complete -c cssgrep -l ext -x -d 'Extensions to scan with -r (comma-separated)'

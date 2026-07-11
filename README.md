@@ -76,6 +76,7 @@ locator appears only with `-n`:
 
 | Flag | Description |
 |------|-------------|
+| `-e`, `--selector <[label=]sel>` | Add a selector (repeatable). Matches from all `-e` selectors merge in document order, each tagged `[label]` (default label: the selector text). With `-e`, every positional argument is a file path, like `grep -e`. See [Multiple selectors](#multiple-selectors--e). |
 | `-r`, `--recursive` | Recurse into directory arguments (defaults to `.` if none given). |
 | `--max-depth <n>` | Limit `-r` recursion depth (`1` = the given directory only, no subdirectories). |
 | `--ext <list>` | Extensions to scan with `-r` (default `html,htm`). Value attaches with `=`: `--ext htm` or `--ext=htm`. |
@@ -88,7 +89,7 @@ locator appears only with `-n`:
 | `-p`, `--print` | Pretty-print the matched node's HTML, re-indented from scratch (works on minified input). No `line:col` locator is shown. |
 | `--attr <name>` | Print the value of attribute `<name>` for each match (nodes without it are skipped; if every match is skipped the exit status is 1). The name is matched case-insensitively. Honors `-n` and `-w`. |
 | `--text` | Print the matched node's text content, whitespace collapsed. Honors `-n` and `-w`. |
-| `--json` | Print one JSON object per match (NDJSON), with `file`, `line`, `col`, `html`, `text`. |
+| `--json` | Print one JSON object per match (NDJSON), with `file`, `line`, `col`, `html`, `text` — plus `label` when `-e` is used. |
 | `--parent <n>` | Report the `n`-th element ancestor of each match instead of the match itself (de-duplicated). Pairs well with `-p`. |
 | `-w`, `--max-width <n>` | Truncate the shown line to `n` columns (adds `…`). Value attaches or follows: `-w100`, `-w 100`, `--max-width=100`. |
 | `-A`, `--after-context <n>` | Print `n` source lines after each match. |
@@ -105,6 +106,14 @@ locator appears only with `-n`:
 | `-H`, `--with-filename` | Always print the `file:` prefix, even for a single file or stdin. |
 | `--no-filename` | Never print the `file:` prefix, even when searching multiple files. |
 | `--color[=<when>]` | Colorize output: `auto` (default — color only when stdout is a terminal), `always`, or `never`. A bare `--color` means `auto`, like grep; use `--color=always` to force color into pipes. |
+| `--watch` | Re-run the search whenever a watched file changes. TTY: clear + reprint; pipe: append with `== HH:MM:SS ==` separators; `--json`: NDJSON `{"event":"run",…}` per rerun. Ctrl-C exits 0. See [Watch mode](#watch-mode---watch). |
+| `--no-clear` | With `--watch` on a TTY: append instead of clearing the screen. |
+| `--add-class <c>` | *Rewrite:* add a class to each matched element. See [Rewriting HTML](#rewriting-html-refactor-ops). |
+| `--remove-class <c>` | *Rewrite:* remove a class (the attribute is dropped when emptied). |
+| `--set-attr <k=v>` | *Rewrite:* set attribute `k` to `v` (added if missing; value escaped). |
+| `--remove-attr <k>` | *Rewrite:* remove attribute `k` (all source occurrences). |
+| `--rename-tag <t>` | *Rewrite:* rename the element — its closing tag too, when one exists. |
+| `--diff` | Emit a unified diff instead of the rewritten document; required for multiple files. Apply with `git apply` or `patch`. |
 | `-h`, `--help` | Show help. |
 | `-V`, `--version` | Print the version and exit. |
 
@@ -146,6 +155,9 @@ cssgrep 'a' --attr href testdata/links.html   # every link target
 cssgrep 'h1, h2' --text -r src/               # all heading text
 cssgrep 'img' -l -r .                          # files that contain an <img>
 
+# multiple labeled selectors — scrape several fields in one pass
+cssgrep -e 'title=h1' -e 'price=.card .price' --json page.html
+
 # structural context — show the container the match lives in
 cssgrep '.price' -p --parent 1 testdata/cards.html  # pretty-print each price's card
 
@@ -161,6 +173,119 @@ printing — structural context that line-based `-A`/`-B` can't express. Shared
 ancestors are de-duplicated, so `cssgrep '.price' --parent 1 -p` prints each
 containing card once. It composes with every print mode (`-p`, `--attr`,
 `--text`, `--json`, or the default line output).
+
+### Multiple selectors (`-e`)
+
+Repeatable `-e [label=]<selector>` searches several selectors in one parse
+pass and tags each match with which one hit — one command turns a page into
+labeled fields:
+
+```sh
+$ cssgrep -n -e 'title=h1' -e 'price=.card .price' page.html
+3:5 [title] <h1>Widget</h1>
+9:12 [price] <span class="price">$4.99</span>
+
+$ cssgrep --json -e 'title=h1' -e 'price=.card .price' page.html
+{"file":"page.html","line":3,"col":5,"label":"title","html":"<h1>Widget</h1>","text":"Widget"}
+{"file":"page.html","line":9,"col":12,"label":"price","html":"...","text":"$4.99"}
+```
+
+The label is anything matching `[A-Za-z_][A-Za-z0-9_-]*` before a `=`; since a
+bare `=` is never valid CSS outside `[...]`, there's no ambiguity — `-e
+'[href=x]'` is a plain selector. An unlabeled `-e` is tagged with its own
+selector text.
+
+Matches from all selectors merge into one document-order stream (a node hit by
+two selectors is reported once per selector, in `-e` order), and `-m`/`-M`
+budgets cap that merged stream, exactly like grep caps lines regardless of
+which pattern matched. Print modes (`--text`, `--attr`, `-p`, `--json`) apply
+globally to every selector. With `-e`, positional arguments are always file
+paths — like `grep -e`, a mistyped path is reported as unreadable rather than
+re-guessed as a selector.
+
+### Watch mode (`--watch`)
+
+`--watch` keeps the search running and re-runs it whenever a watched file
+changes — for keeping an eye on generated HTML, or feeding a tool a live
+stream of matches:
+
+```sh
+cssgrep '.error' --watch -rn build/        # live view: clears and reprints
+cssgrep '.error' --watch -r --json build/ | your-tool   # NDJSON event feed
+```
+
+Output adapts to where it goes, like `--color=auto`: on a terminal each run
+clears the screen and reprints (pass `--no-clear` to append instead — handy
+in tmux scrollback); piped output never contains escape codes and appends
+each run after a `== HH:MM:SS <changed file> ==` separator; with `--json`,
+each rerun emits `{"event":"run","changed":…,"matches":n}` followed by the
+usual match records.
+
+Every rerun repeats the full directory walk, so newly created files are
+picked up (and deleted ones dropped) under exactly the same
+`--include`/`--ignore`/`--ext` rules as a fresh invocation. Change bursts are
+debounced. Watching uses the OS's native file events (no polling), which can
+be unreliable on network or virtual filesystems. `--watch` needs file or
+directory arguments (stdin can't be watched), can't be combined with `-q` or
+the rewrite ops, and runs until Ctrl-C (exit status 0, like `watch(1)`).
+
+### Rewriting HTML (refactor ops)
+
+The same selector engine can *edit* what it matches. Five ops — repeatable and
+freely combined — rewrite each matched element's tag in place:
+
+```sh
+$ cssgrep '.old' --remove-class old --add-class fresh page.html   # rewritten doc → stdout
+$ cssgrep 'b' --rename-tag strong -r src/ --diff                  # unified diff for many files
+$ cssgrep 'b' --rename-tag strong -r src/ --diff | git apply      # …review, then apply
+```
+
+The fidelity contract: **only the matched tags' bytes change.** Matching runs
+once against the original document, then edits are byte-splices — quoting,
+entities, whitespace and formatting everywhere else pass through untouched
+(the edited attribute itself is normalized to `name="value"`). Ops compose in
+a fixed order — rename → remove-attr → set-attr → remove-class → add-class —
+so results never depend on argument order. `--rename-tag` edits the closing
+tag only when one explicitly exists (voids like `<img>`, self-closing `<x/>`
+and implied closes like `<li>` are handled). `--parent` composes: `.price
+--add-class sale --parent 1` tags the container.
+
+cssgrep never writes a file: a single input prints the rewritten document to
+stdout; `--diff` (required for multiple files) emits a git-apply-able unified
+diff, so applying is a reviewable, revertable `git apply`/`patch` step. Input
+that isn't valid UTF-8 is refused (exit 2) — a rewriter must never corrupt
+bytes it didn't edit. Exit status: `0` if anything was edited, `1` if nothing
+matched, `2` on error.
+
+Rewrite is its own mode: it can't be combined with the print
+(`-n`/`-p`/`--attr`/`--text`/`--json`), aggregate (`-c`/`-l`/`-L`/`-q`),
+context, `-m`/`-M`, `-w`, `-0` or `-e` flags.
+
+The same operation is available to library consumers as
+`doc.transform(selector, ops)` — see [Library usage](#library-usage).
+
+### Inverting matches (why there's no `-v`)
+
+grep needs `-v` because a regex can't say "lines *not* matching". CSS can:
+`:not()` — including full complex selectors and selector lists, plus `:has()`
+for descendant conditions — expresses every inversion directly in the
+selector, scoped to the elements you actually care about:
+
+```sh
+cssgrep 'img:not([alt])' -rn .          # accessibility: images missing alt text
+cssgrep 'div.card:not(:has(a))' page.html   # cards that contain no link
+cssgrep 'a:not(nav a, footer a)' page.html  # links outside chrome
+cssgrep 'input:not([type=hidden])' -c form.html  # count the visible inputs
+```
+
+A flag-level `-v` would need its own answer to "*which* non-matching
+elements?" — bare inversion (`:not(a)`) matches nearly every element in the
+document — so the selector, which already names the universe on the left of
+`:not()`, is both shorter and standard CSS. For whole files without a match,
+use `-L`.
+
+Typing `-v` or `--invert-match` out of grep habit fails with exit 2 and a
+message pointing back to these recipes, rather than a bare "unknown option".
 
 ## Vim / Neovim integration
 
@@ -199,6 +324,53 @@ cp completions/cssgrep.fish ~/.config/fish/completions/
 
 (The completions are hand-maintained; keep them in step with `--help` if you add
 a flag.)
+
+## Library usage
+
+The engine is also a programmatic API — `require('cssgrep')` gives you
+`parse()` (the CLI is a separate entry point built on it, so requiring the
+package never runs it):
+
+```js
+const { parse } = require('cssgrep');
+
+const doc = parse('<div class="card"><a href="/x">go</a></div>'); // parse once
+doc.search('.card a');                                     // …query many times
+// [{
+//   start: 18, end: 39,        // offsets into the input: doc.html.slice(start, end)
+//   line: 1, col: 19,          // 1-based; col counts bytes, like the CLI's -n
+//   tag: 'a',
+//   attribs: { href: '/x' },
+//   html: '<a href="/x">go</a>',
+//   text: 'go',
+//   node: [Element],           // raw htmlparser2 element (advanced, unstable)
+// }]
+doc.search('a', { parent: 1 });    // same tree, no re-parse
+```
+
+`parse(html)` takes an HTML **string** (file discovery, stdin and binary
+detection are CLI concerns) and pays the parse and line index once; each
+`doc.search(selector, opts)` is then just a selector run over the same tree —
+this is what the CLI's `-e` uses, so multiple selectors never re-parse.
+Matches come back in DOM order; `opts.parent` re-targets each to its n-th
+element ancestor, deduplicated — the CLI's `--parent`. `line`/`col`/`html`/
+`text` are lazy (computed on first read, and by `JSON.stringify`; the circular
+`node` reference stays out of serialization). `parse` throws on non-string
+input, `search` on a selector [css-select](https://github.com/fb55/css-select)
+cannot parse. TypeScript types ship with the package (`index.d.ts`).
+
+Every match's `html` is the exact source slice, so offsets stay byte-faithful
+even on minified input — the same position tracking the CLI uses.
+
+The rewrite mode is exposed as `doc.transform(selector, ops)`:
+
+```js
+const { html, edits } = doc.transform('.old', {
+  removeClass: 'old', addClass: 'fresh',      // also: renameTag, setAttr,
+});                                           // removeAttr, parent
+// html  — the rewritten document (bytes outside the edits untouched)
+// edits — [{ start, end, before, after }] splice records, document order
+```
 
 ## How it works
 
