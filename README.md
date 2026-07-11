@@ -106,6 +106,8 @@ locator appears only with `-n`:
 | `-H`, `--with-filename` | Always print the `file:` prefix, even for a single file or stdin. |
 | `--no-filename` | Never print the `file:` prefix, even when searching multiple files. |
 | `--color[=<when>]` | Colorize output: `auto` (default — color only when stdout is a terminal), `always`, or `never`. A bare `--color` means `auto`, like grep; use `--color=always` to force color into pipes. |
+| `--watch` | Re-run the search whenever a watched file changes. TTY: clear + reprint; pipe: append with `== HH:MM:SS ==` separators; `--json`: NDJSON `{"event":"run",…}` per rerun. Ctrl-C exits 0. See [Watch mode](#watch-mode---watch). |
+| `--no-clear` | With `--watch` on a TTY: append instead of clearing the screen. |
 | `--add-class <c>` | *Rewrite:* add a class to each matched element. See [Rewriting HTML](#rewriting-html-refactor-ops). |
 | `--remove-class <c>` | *Rewrite:* remove a class (the attribute is dropped when emptied). |
 | `--set-attr <k=v>` | *Rewrite:* set attribute `k` to `v` (added if missing; value escaped). |
@@ -200,6 +202,32 @@ which pattern matched. Print modes (`--text`, `--attr`, `-p`, `--json`) apply
 globally to every selector. With `-e`, positional arguments are always file
 paths — like `grep -e`, a mistyped path is reported as unreadable rather than
 re-guessed as a selector.
+
+### Watch mode (`--watch`)
+
+`--watch` keeps the search running and re-runs it whenever a watched file
+changes — for keeping an eye on generated HTML, or feeding a tool a live
+stream of matches:
+
+```sh
+cssgrep '.error' --watch -rn build/        # live view: clears and reprints
+cssgrep '.error' --watch -r --json build/ | your-tool   # NDJSON event feed
+```
+
+Output adapts to where it goes, like `--color=auto`: on a terminal each run
+clears the screen and reprints (pass `--no-clear` to append instead — handy
+in tmux scrollback); piped output never contains escape codes and appends
+each run after a `== HH:MM:SS <changed file> ==` separator; with `--json`,
+each rerun emits `{"event":"run","changed":…,"matches":n}` followed by the
+usual match records.
+
+Every rerun repeats the full directory walk, so newly created files are
+picked up (and deleted ones dropped) under exactly the same
+`--include`/`--ignore`/`--ext` rules as a fresh invocation. Change bursts are
+debounced. Watching uses the OS's native file events (no polling), which can
+be unreliable on network or virtual filesystems. `--watch` needs file or
+directory arguments (stdin can't be watched), can't be combined with `-q` or
+the rewrite ops, and runs until Ctrl-C (exit status 0, like `watch(1)`).
 
 ### Rewriting HTML (refactor ops)
 

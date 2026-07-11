@@ -268,6 +268,39 @@ Globs for
 support
 .BR * " (within a path segment), " ** " (across " / ),
 .BR ? " (one non-slash char), and brace alternation like " *.{html,htm} .
+.SH WATCH MODE
+.TP
+.B \-\-watch
+Keep running and repeat the search whenever a watched file changes. Requires
+file or directory arguments (standard input cannot be watched); cannot be
+combined with
+.B \-q
+or the rewrite operations. Runs until interrupted; Ctrl-C exits with
+status 0, like
+.BR watch (1).
+.TP
+.B \-\-no\-clear
+With
+.B \-\-watch
+on a terminal: append run results instead of clearing the screen.
+.PP
+Output adapts to its destination, like
+.BR \-\-color=auto :
+on a terminal each run clears the screen and reprints; piped output contains
+no escape codes and appends each run after a
+.RI \(dq== " HH:MM:SS changed-file " ==\(dq
+separator; with
+.B \-\-json
+each rerun emits an NDJSON
+.I {"event":"run","changed":...,"matches":n}
+record followed by the match records.
+.PP
+Every rerun repeats the full directory walk, so new files are discovered (and
+deleted ones dropped) under the same
+.BR \-\-include / \-\-ignore / \-\-ext
+rules as a fresh invocation; change bursts are debounced. Watching uses the
+operating system's native file events (no polling), which may be unreliable
+on network or virtual filesystems.
 .SH REWRITING
 Five repeatable, freely combinable operations edit the matched elements
 instead of reporting them:

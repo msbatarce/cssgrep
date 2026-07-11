@@ -67,6 +67,14 @@ Options:
       --no-filename      Never print the file name prefix (even for many files).
       --color[=<when>]   Colorize output: auto (default, also what a bare
                          --color means, like grep), always or never.
+      --watch            Re-run the search whenever a watched file changes
+                         (requires paths; excludes -q and the rewrite ops).
+                         On a TTY the screen is cleared and results reprinted;
+                         piped output appends each run after a == HH:MM:SS ==
+                         separator; with --json each run emits an NDJSON
+                         {"event":"run",...} record followed by the matches.
+                         Exit with Ctrl-C (status 0).
+      --no-clear         With --watch on a TTY: append instead of clearing.
   -h, --help             Show this help.
   -V, --version          Show version and exit.
 
@@ -155,6 +163,8 @@ function parseArgs(argv) {
     color: 'auto',
     rewrite: { renameTag: null, removeAttr: [], setAttr: {}, removeClass: [], addClass: [] },
     diff: false,
+    watch: false,
+    noClear: false,
   };
   const setExts = v => {
     opts.extGiven = true;
@@ -258,6 +268,8 @@ function parseArgs(argv) {
         }
         case '--rename-tag': opts.rewrite.renameTag = value(); break;
         case '--diff': opts.diff = true; break;
+        case '--watch': opts.watch = true; break;
+        case '--no-clear': opts.noClear = true; break;
         case '--invert-match': failInvert(name); break;
         default: fail(`unknown option: ${name}`);
       }
@@ -340,6 +352,14 @@ function parseArgs(argv) {
     if (opts.selectors.length) {
       fail('rewrite takes a single positional selector (use a selector list like "a, b" instead of -e)');
     }
+  }
+  // Watch re-runs the search on change; modes that end the run early or edit
+  // files make no sense against it.
+  if (opts.noClear && !opts.watch) fail('--no-clear requires --watch');
+  if (opts.watch) {
+    if (opts.quiet) fail('--watch cannot be combined with -q');
+    if (opts.rewriteActive) fail('--watch cannot be combined with rewrite operations');
+    if (opts.noClear && opts.json) fail('--no-clear is meaningless with --json (it never clears)');
   }
   if (!['auto', 'always', 'never'].includes(opts.color)) {
     fail(`invalid --color value: ${opts.color} (expected auto, always or never)`);
@@ -1005,11 +1025,104 @@ function rewriteMain(opts, files, useStdin) {
   process.exitCode = totalEdits > 0 ? 0 : 1;
 }
 
-function main() {
-  const opts = parseArgs(process.argv.slice(2));
-  resolveSelectorAndPaths(opts);
+// The watch program mode: rerun the search whenever a watched path changes.
+// Native recursive fs.watch, no polling (see ROADMAP Phase 10; caveat:
+// network/virtual filesystems may not deliver events). Output adapts like
+// --color=auto does: a TTY gets clear+reprint, a pipe gets append mode with
+// `== HH:MM:SS … ==` separators (--no-clear forces append on a TTY), and
+// --json gets an NDJSON stream — {"event":"run",...} then the match records.
+// Runs until SIGINT (exit 0, like watch(1)).
+function watchMain(opts) {
+  const clearMode = !opts.json && !opts.noClear && Boolean(process.stdout.isTTY);
+  const renderOut = out => (!out.length ? ''
+    : opts.nul && (opts.filesWithMatches || opts.filesWithoutMatch)
+      ? out.map(s => s + '\0').join('')
+      : out.join('\n') + '\n');
 
-  // Resolve the list of files to search.
+  const run = changed => {
+    // Re-walk every run: a rerun sees exactly what a fresh invocation would.
+    const { files } = resolveFiles(opts);
+    const out = [];
+    let total = 0;
+    try {
+      total = searchFiles(opts, files, out);
+    } catch (e) {
+      if (e && e.message && /selector|tokeniz|parse/i.test(e.message)) {
+        fail(`invalid selector: ${opts.selector != null
+          ? opts.selector
+          : opts.selectors.map(s => s.selector).join(', ')}`);
+      }
+      fail(e.message);
+    }
+    if (opts.json) {
+      process.stdout.write(JSON.stringify({
+        event: 'run',
+        changed: changed || null,
+        matches: total,
+      }) + '\n' + renderOut(out));
+    } else if (clearMode) {
+      process.stdout.write('\x1b[2J\x1b[H' + (out.length ? renderOut(out) : 'cssgrep: no matches\n'));
+    } else {
+      const ts = new Date().toTimeString().slice(0, 8);
+      process.stdout.write(`== ${ts} ${changed || 'watching'} ==\n` + renderOut(out));
+    }
+  };
+
+  // Debounce change bursts (editors often fire several events per save).
+  let timer = null;
+  let pending = null;
+  const schedule = changed => {
+    pending = changed;
+    clearTimeout(timer);
+    timer = setTimeout(() => { const c = pending; pending = null; run(c); }, 80);
+  };
+
+  // Directory targets get one recursive watcher each. Explicit file targets
+  // are watched via their parent directory, filtered by name — editors often
+  // save by rename-replace, which would orphan a watcher on the file itself.
+  const watchers = [];
+  const fileTargets = new Map();              // parent dir -> Set of basenames
+  const targets = opts.paths.length ? opts.paths : ['.'];
+  for (const p of targets) {
+    const st = fs.statSync(p, { throwIfNoEntry: false });
+    if (!st) {
+      if (!opts.noMessages) process.stderr.write(`cssgrep: ${p}: no such file or directory\n`);
+      continue;
+    }
+    if (st.isDirectory()) {
+      watchers.push(fs.watch(p, { recursive: true },
+        (ev, f) => schedule(f ? path.join(p, f) : p)));
+    } else {
+      const dir = path.dirname(p);
+      if (!fileTargets.has(dir)) fileTargets.set(dir, new Set());
+      fileTargets.get(dir).add(path.basename(p));
+    }
+  }
+  for (const [dir, bases] of fileTargets) {
+    watchers.push(fs.watch(dir,
+      (ev, f) => { if (!f || bases.has(f)) schedule(f ? path.join(dir, f) : dir); }));
+  }
+  if (!watchers.length) fail('--watch: nothing to watch');
+  for (const w of watchers) {
+    w.on('error', e => {
+      if (!opts.noMessages) process.stderr.write(`cssgrep: watch: ${e.message}\n`);
+    });
+  }
+
+  process.on('SIGINT', () => {
+    for (const w of watchers) w.close();
+    clearTimeout(timer);
+    process.exitCode = 0;                     // watch(1) convention
+  });
+
+  run(null);                                  // initial pass, then wait
+}
+
+// Resolve the paths to search into a concrete file list (or stdin). Watch
+// mode calls this again on every rerun, so a rerun sees exactly what a fresh
+// invocation would: new files picked up per the include/ignore/--ext rules,
+// deleted ones dropped.
+function resolveFiles(opts) {
   let files = [];
   let useStdin = false;
   if (opts.recursive) {
@@ -1026,23 +1139,63 @@ function main() {
   } else {
     useStdin = true;
   }
+  return { files, useStdin };
+}
+
+// One search pass over a file list; appends output lines to `out` and returns
+// the match total. Shared by the single-shot main path and each watch rerun.
+function searchFiles(opts, files, out) {
+  // A label (file prefix) is shown when searching more than one file; -H forces
+  // it on (even for one file or stdin) and --no-filename forces it off.
+  const showLabel = opts.withFilename ? true
+    : opts.noFilename ? false
+    : files.length > 1;
+  let total = 0;
+  // -M/--max-total: remaining matches allowed across all files (Infinity = off).
+  const room = () => (opts.maxTotal ? Math.max(0, opts.maxTotal - total) : Infinity);
+  for (const f of files) {
+    if (room() <= 0) break;               // -M: global budget exhausted
+    let buf;
+    try {
+      buf = fs.readFileSync(f);           // Buffer: sniff before decoding
+    } catch (e) {
+      if (!opts.noMessages) process.stderr.write(`cssgrep: ${f}: ${e.code || e.message}\n`);
+      continue;
+    }
+    if (looksBinary(buf)) {
+      if (!opts.noMessages && !opts.quiet) {
+        process.stderr.write(`cssgrep: ${f}: binary file (skipped)\n`);
+      }
+      continue;
+    }
+    total += searchSource(buf.toString('utf8'), f, showLabel, opts, out, room());
+    if (opts.quiet && total > 0) break;   // -q: first match decides the status
+  }
+  return total;
+}
+
+function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  resolveSelectorAndPaths(opts);
+
+  const { files, useStdin } = resolveFiles(opts);
 
   if (opts.rewriteActive) {
     rewriteMain(opts, files, useStdin);
     return;
   }
+  if (opts.watch) {
+    if (useStdin) fail('--watch requires file or directory paths');
+    watchMain(opts);
+    return;
+  }
 
-  // A label (file prefix) is shown when searching more than one file; -H forces
-  // it on (even for one file or stdin) and --no-filename forces it off.
   const showLabel = opts.withFilename ? true
     : opts.noFilename ? false
     : (!useStdin && files.length > 1);
 
   const out = [];
   let total = 0;
-
-  // -M/--max-total: remaining matches allowed across all files (Infinity = off).
-  const room = () => (opts.maxTotal ? Math.max(0, opts.maxTotal - total) : Infinity);
 
   try {
     if (useStdin) {
@@ -1052,27 +1205,11 @@ function main() {
           process.stderr.write('cssgrep: (standard input): binary input (skipped)\n');
         }
       } else {
-        total += searchSource(buf.toString('utf8'), '(standard input)', showLabel, opts, out, room());
+        total += searchSource(buf.toString('utf8'), '(standard input)', showLabel, opts, out,
+          opts.maxTotal || Infinity);
       }
     } else {
-      for (const f of files) {
-        if (room() <= 0) break;               // -M: global budget exhausted
-        let buf;
-        try {
-          buf = fs.readFileSync(f);           // Buffer: sniff before decoding
-        } catch (e) {
-          if (!opts.noMessages) process.stderr.write(`cssgrep: ${f}: ${e.code || e.message}\n`);
-          continue;
-        }
-        if (looksBinary(buf)) {
-          if (!opts.noMessages && !opts.quiet) {
-            process.stderr.write(`cssgrep: ${f}: binary file (skipped)\n`);
-          }
-          continue;
-        }
-        total += searchSource(buf.toString('utf8'), f, showLabel, opts, out, room());
-        if (opts.quiet && total > 0) break;   // -q: first match decides the status
-      }
+      total = searchFiles(opts, files, out);
     }
   } catch (e) {
     if (e && e.message && /selector|tokeniz|parse/i.test(e.message)) {

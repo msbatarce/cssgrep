@@ -109,7 +109,9 @@ validation matrix accordingly.
 The rewrite ops (`--add-class` etc., `--diff`) are a separate *program mode*,
 not a fourth axis: they exclude the print and aggregate axes entirely (only
 the Target axis, `--parent`, composes). `rewriteMain` in `cli.js` is that
-mode's `main`.
+mode's `main`. `--watch` (`watchMain`) is a *driver* over the normal search:
+it re-runs `resolveFiles` + `searchFiles` per (debounced) file event and
+adapts its output to TTY/pipe/`--json`; it excludes `-q` and the rewrite ops.
 
 ## Roadmap
 

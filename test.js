@@ -1183,6 +1183,74 @@ check('rewrite CLI: --parent retargets the edit to the container', () => {
   assert.strictEqual(stdout, '<div class="card sale"><span class="price">4</span></div>');
 });
 
+// --- watch mode ----------------------------------------------------------------
+// Watch runs forever, so these spawn an async Node driver that starts the
+// watcher, mutates files on a timer, SIGINTs it, and reports what it saw.
+// Timings are generous to absorb slow CI filesystems.
+function driveWatch(dir, cliArgs, mutations) {
+  const driver = `
+    const { spawn } = require('child_process');
+    const fs = require('fs');
+    const c = spawn(process.execPath, ${JSON.stringify([CLI, ...cliArgs])},
+      { stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '', err = '';
+    c.stdout.on('data', d => out += d);
+    c.stderr.on('data', d => err += d);
+    ${mutations.map(([ms, file, content]) =>
+    `setTimeout(() => fs.writeFileSync(${JSON.stringify(file)}, ${JSON.stringify(content)}), ${ms});`
+  ).join('\n')}
+    setTimeout(() => c.kill('SIGINT'), 1600);
+    c.on('exit', code => console.log(JSON.stringify({ code, out, err })));
+  `;
+  const r = spawnSync('node', ['-e', driver], { cwd: dir, encoding: 'utf8', timeout: 15000 });
+  return JSON.parse(r.stdout);
+}
+
+check('--watch: reruns on change, discovers new files, SIGINT exits 0', () => {
+  const dir = fs.mkdtempSync(path.join(tmp, 'watch-'));
+  fs.writeFileSync(path.join(dir, 'a.html'), '<div class="err">one</div>\n');
+  const r = driveWatch(dir, ['.err', '--watch', '-rn', '.'], [
+    [500, 'a.html', '<p>fixed</p>\n'],                    // match disappears
+    [1000, 'fresh.html', '<b class="err">new</b>\n'],     // re-walk must find it
+  ]);
+  const runs = r.out.split(/^== .*==$/m).filter(s => s.trim() !== '');
+  assert.ok(r.out.includes('<div class="err">one</div>'), 'initial run output');
+  assert.ok(r.out.includes('fresh.html:1:1'), 'new file discovered and matched');
+  assert.ok(/== \d\d:\d\d:\d\d watching ==/.test(r.out), 'append-mode separator (piped)');
+  assert.ok(!r.out.includes('\x1b[2J'), 'no clear codes into a pipe');
+  assert.ok(runs.length >= 2, 'at least initial + one rerun');
+  if (process.platform !== 'win32') assert.strictEqual(r.code, 0, r.err); // SIGINT → 0
+});
+
+check('--watch --json: NDJSON run events precede match records', () => {
+  const dir = fs.mkdtempSync(path.join(tmp, 'watch-'));
+  fs.writeFileSync(path.join(dir, 'a.html'), '<div class="err">one</div>\n');
+  const r = driveWatch(dir, ['.err', '--watch', '-r', '--json', '.'], [
+    [500, 'a.html', '<div class="err">one</div><div class="err">two</div>\n'],
+  ]);
+  const events = r.out.trim().split('\n').map(l => JSON.parse(l));
+  const runs = events.filter(e => e.event === 'run');
+  assert.ok(runs.length >= 2, 'initial + rerun events');
+  assert.strictEqual(runs[0].changed, null);
+  assert.strictEqual(runs[0].matches, 1);
+  assert.strictEqual(runs[runs.length - 1].matches, 2);
+  assert.ok(events.some(e => e.text === 'two'), 'match records follow the events');
+});
+
+check('--watch validation: -q, rewrite ops, stdin, --no-clear misuse rejected', () => {
+  const cases = [
+    [['div', '--watch', '-q', fMulti]],
+    [['div', '--watch', '--add-class', 'x', fMulti]],
+    [['div', '--watch']],                                  // stdin: nothing to watch
+    [['div', '--no-clear', fMulti]],                       // --no-clear needs --watch
+    [['div', '--watch', '--no-clear', '--json', fMulti]],
+  ];
+  for (const [args] of cases) {
+    const r = spawnSync('node', [CLI, ...args], { input: '', encoding: 'utf8' });
+    assert.strictEqual(r.status, 2, `${args.join(' ')} should exit 2: ${r.stderr}`);
+  }
+});
+
 // --- teardown ---------------------------------------------------------------
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(failures ? `\n${failures} test(s) failed` : '\nall tests passed');

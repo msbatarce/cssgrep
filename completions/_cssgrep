@@ -11,6 +11,8 @@ _cssgrep() {
     '*--set-attr[rewrite: set attribute name=value]:name=value:' \
     '*--remove-attr[rewrite: remove an attribute]:attribute:' \
     '--rename-tag[rewrite: rename the element]:tag:' \
+    '--watch[re-run the search whenever a watched file changes]' \
+    '--no-clear[with --watch on a TTY: append instead of clearing]' \
     '--diff[emit a unified diff instead of the document]' \
     '(-r --recursive)'{-r,--recursive}'[recurse into directory arguments]' \
     '--max-depth[limit -r recursion depth (1 = given dir only)]:depth:' \

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `--watch`: re-run the search whenever a watched file changes (native
+  recursive file events, no polling; debounced; every rerun repeats the full
+  walk so new files appear under the same include/ignore rules). Output
+  adapts like `--color=auto`: a TTY clears and reprints (`--no-clear` to
+  append instead), pipes get `== HH:MM:SS ==` run separators, and `--json`
+  becomes an NDJSON stream of `{"event":"run",…}` records followed by
+  matches. Ctrl-C exits 0.
 - Rewrite mode: `--add-class`, `--remove-class`, `--set-attr k=v`,
   `--remove-attr` and `--rename-tag` edit the matched elements instead of
   reporting them. Byte-splice fidelity: only the matched tags' bytes change.
