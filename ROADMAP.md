@@ -316,26 +316,41 @@ removal/unwrap later if wanted.
   attribute-span lexer (htmlparser2 doesn't expose attribute offsets), splice
   the edit, leave every other byte identical. Apply splices back-to-front so
   earlier offsets stay valid.
-- Output: rewritten document to stdout by default; `--diff` for a unified
-  diff; `--write` for in-place (`-i` is taken by `--ignore`). Multi-file +
-  stdout is ambiguous → multi-file requires `--write` or `--diff`.
-- Library API first (depends on Phase 6):
-  `transform(html, selector, ops) → { html, edits: [{start, end, before,
-  after}] }`; the CLI is a thin wrapper.
+- Output: rewritten document to stdout for a single input; `--diff` emits a
+  unified diff for any number of files.
+- Library API first (depends on Phase 6): a method on the `parse()` document
+  handle — `doc.transform(selector, ops) → { html, edits: [{start, end,
+  before, after}] }`; the CLI is a thin wrapper.
 - Validation: rewrite is a new *program mode*, not a fourth output axis — it
   excludes the print and aggregate axes entirely (reject `-p`, `--json`, `-c`,
   `-l`, `-q`, context flags). Extend the matrix accordingly.
 
-**Design questions:**
-- Splice vs re-serialize (lean: splice — confirm).
-- Exit codes: 0 = edits made, 1 = no matches/no edits, 2 = error
-  (grep-flavored)?
-- Multiple ops in one run: allowed? Applied in what order?
-- Overlap rules when an ancestor and its descendant both match: opening tags
-  are disjoint so splices don't conflict — but verify `--rename-tag`, which
-  must also edit the *closing* tag.
-- In-place safety: backup suffix? Atomic tmp-file + rename?
-- Non-UTF-8 inputs: refuse, or pass bytes through untouched outside splices?
+**Decisions (2026-07-07):**
+- **Splice, not re-serialize** — never reformat bytes the edit didn't touch.
+- **Exit codes, grep-flavored:** 0 = edits made, 1 = no matches/no edits,
+  2 = error.
+- **No in-place writes.** stdout (single input) + `--diff` (any number of
+  files) only; a diff is applied — reviewably, revertably — with `git apply`
+  or `patch`, so cssgrep never modifies a file. `--write` (atomic tmp+rename)
+  can be added later if bulk refactors demand it.
+- **Multiple ops compose in a fixed documented pipeline order** per element:
+  rename-tag → remove-attr → set-attr → remove-class → add-class.
+  Deterministic regardless of argv order (`--remove-attr class --add-class x`
+  always yields `class="x"`). Note re-matching a modified node cannot happen
+  by construction: the selector runs once against the parsed original
+  document; edits are byte splices computed afterward — the tree is never
+  re-queried.
+- **Non-UTF-8 input: refuse to rewrite** (exit 2, decode/re-encode round-trip
+  check) — the rewriter must never corrupt bytes it didn't edit, and a lossy
+  UTF-8 decode written back would. Search modes keep today's lossy-display
+  tolerance.
+- **Overlaps are safe by construction:** when a selector matches both an
+  ancestor and its descendant, all edited spans (both opening tags; for
+  rename, both closing tags too) are pairwise disjoint because of HTML
+  nesting, so back-to-front splicing cannot conflict. The real trap is
+  elements *without* a closing tag — voids (`<img>`), self-closing (`<x/>`),
+  parser-implied closes (`<li>` without `</li>`): `--rename-tag` must verify
+  an explicit closing tag exists at the node's tail before splicing it.
 
 ## Phase 10 — Watch mode (`--watch`)
 
