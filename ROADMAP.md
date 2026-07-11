@@ -6,8 +6,8 @@ grep-family flags plus HTML-specific capabilities plain grep can't offer.
 **Process:** implement in phase order. **Each feature is its own commit** (code +
 tests + docs, suite green) — see `CLAUDE.md`. Phases are independently shippable.
 
-**Status: Phases 0–8 are done (7 resolved as "no flag" — see below); Phases
-9–11 are planned (v1.3+), with design decisions open.** Phases 0–4 shipped:
+**Status: Phases 0–9 are done (7 resolved as "no flag" — see below); Phases
+10–11 are planned (v1.3+), with design decisions open.** Phases 0–4 shipped:
 `-m`, `-l`/`-L`/`-q`, `--attr`/`--text`, `--json`, `-0`/`--null`, `--parent`,
 and `-A`/`-B`/`-C`. This file is kept as the design record; future work can
 extend it.
@@ -300,7 +300,7 @@ emits NDJSON records tagged with which selector hit.
   mistyped path reports as unreadable rather than being re-guessed as a
   selector.
 
-## Phase 9 — Rewrite mode (HTML refactor operations)
+## Phase 9 — Rewrite mode (HTML refactor operations) — implemented 2026-07-07
 
 The genuinely novel one: edit matched nodes, not just report them. HTML-shaped
 refactor ops: `--add-class <c>`, `--remove-class <c>`, `--set-attr k=v`,

@@ -1066,6 +1066,123 @@ check('lib: throws on an invalid selector and on non-string input', () => {
   assert.throws(() => parse(null), TypeError);
 });
 
+// --- rewrite mode (lib transform + CLI) ----------------------------------------
+
+check('transform: class ops splice only the matched tag', () => {
+  const doc = parse('<i>é</i><div class="a" title=\'q\'>x</div>');
+  const { html, edits } = doc.transform('div', { addClass: 'b' });
+  assert.strictEqual(html, '<i>é</i><div class="a b" title=\'q\'>x</div>');
+  assert.strictEqual(edits.length, 1);
+  assert.strictEqual(doc.html.slice(edits[0].start, edits[0].end), edits[0].before);
+  assert.strictEqual(edits[0].after, '<div class="a b" title=\'q\'>');
+});
+
+check('transform: add-class dedups, remove-class drops an emptied attribute', () => {
+  const doc = parse('<div class="a">x</div>');
+  assert.strictEqual(doc.transform('div', { addClass: 'a' }).edits.length, 0);
+  assert.strictEqual(doc.transform('div', { removeClass: 'a' }).html, '<div>x</div>');
+});
+
+check('transform: set-attr replaces, adds, and escapes; remove-attr takes duplicates', () => {
+  const doc = parse('<a href=/old style="x" STYLE="y">go</a>');
+  const r = doc.transform('a', { setAttr: { href: '/n', 'data-t': 'a"b&c' }, removeAttr: 'style' });
+  assert.strictEqual(r.html, '<a href="/n" data-t="a&quot;b&amp;c">go</a>');
+});
+
+check('transform: quoted ">" in an attribute value does not end the tag', () => {
+  const r = parse('<div title="a>b">x</div>').transform('div', { addClass: 'c' });
+  assert.strictEqual(r.html, '<div title="a>b" class="c">x</div>');
+});
+
+check('transform: fixed pipeline order — remove-attr class then add-class', () => {
+  const r = parse('<div class="a b">x</div>')
+    .transform('div', { addClass: 'x', removeAttr: 'class' });
+  assert.strictEqual(r.html, '<div class="x">x</div>');
+});
+
+check('transform: rename-tag edits both tags, nested matches stay disjoint', () => {
+  const r = parse('<div><div>x</div></div>').transform('div', { renameTag: 'section' });
+  assert.strictEqual(r.html, '<section><section>x</section></section>');
+  assert.strictEqual(r.edits.length, 4);
+});
+
+check('transform: rename-tag never invents a closing tag (void/self-closing/implied)', () => {
+  const r = parse('<img src=x><br/><ul><li>a<li>b</ul>')
+    .transform('img, br, li', { renameTag: 'x' });
+  assert.strictEqual(r.html, '<x src=x><x/><ul><x>a<x>b</ul>');
+});
+
+check('transform: throws on empty ops, unknown op, bad names', () => {
+  const doc = parse('<b>x</b>');
+  assert.throws(() => doc.transform('b', {}), TypeError);
+  assert.throws(() => doc.transform('b', { addClas: 'x' }), TypeError);
+  assert.throws(() => doc.transform('b', { renameTag: 'a b' }), TypeError);
+  assert.throws(() => doc.transform('b', { addClass: 'a"b' }), TypeError);
+});
+
+const rwDoc = '<html>\n<body>\n<div class="card old">one</div>\n<p>keep</p>\n</body>\n</html>\n';
+
+check('rewrite CLI: emits the edited document, other bytes untouched', () => {
+  const { stdout, status } = run(['.old', '--remove-class', 'old', '--add-class', 'fresh'],
+    { input: rwDoc });
+  assert.strictEqual(status, 0);
+  assert.strictEqual(stdout, rwDoc.replace('class="card old"', 'class="card fresh"'));
+});
+
+check('rewrite CLI: no match passes the document through with exit 1', () => {
+  const { stdout, status } = run(['.nope', '--add-class', 'x'], { input: rwDoc, expectStatus: 1 });
+  assert.strictEqual(status, 1);
+  assert.strictEqual(stdout, rwDoc);
+});
+
+check('rewrite CLI: --diff emits a unified diff that git apply accepts', () => {
+  const dir = fs.mkdtempSync(path.join(tmp, 'rw-'));
+  fs.writeFileSync(path.join(dir, 'p.html'), '<b class=x>no newline</b>'); // also: no EOL
+  const diff = spawnSync('node', [CLI, 'b', '--add-class', 'y', '--diff', 'p.html'],
+    { cwd: dir, encoding: 'utf8' });
+  assert.strictEqual(diff.status, 0);
+  assert.ok(diff.stdout.startsWith('--- a/p.html\n+++ b/p.html\n'), diff.stdout);
+  assert.ok(diff.stdout.includes('\\ No newline at end of file'));
+  const git = spawnSync('git', ['apply', '-'], { cwd: dir, input: diff.stdout, encoding: 'utf8' });
+  if (git.error && git.error.code === 'ENOENT') return; // no git on this machine: skip
+  assert.strictEqual(git.status, 0, git.stderr);
+  assert.strictEqual(fs.readFileSync(path.join(dir, 'p.html'), 'utf8'),
+    '<b class="x y">no newline</b>');
+});
+
+check('rewrite CLI: multiple files require --diff; --diff covers them all', () => {
+  const dir = fs.mkdtempSync(path.join(tmp, 'rw-'));
+  for (const n of ['m1.html', 'm2.html']) fs.writeFileSync(path.join(dir, n), '<b>x</b>\n');
+  const bare = spawnSync('node', [CLI, 'b', '--add-class', 'z', 'm1.html', 'm2.html'],
+    { cwd: dir, encoding: 'utf8' });
+  assert.strictEqual(bare.status, 2);
+  const diff = spawnSync('node', [CLI, 'b', '--add-class', 'z', '--diff', 'm1.html', 'm2.html'],
+    { cwd: dir, encoding: 'utf8' });
+  assert.strictEqual(diff.status, 0);
+  assert.strictEqual((diff.stdout.match(/^\+\+\+ /gm) || []).length, 2);
+});
+
+check('rewrite CLI: refuses non-UTF-8 input with exit 2', () => {
+  const r = spawnSync('node', [CLI, 'b', '--add-class', 'x'],
+    { input: Buffer.from([0x3c, 0x62, 0x3e, 0xff, 0x3c, 0x2f, 0x62, 0x3e]) });
+  assert.strictEqual(r.status, 2);
+  assert.ok(String(r.stderr).includes('not valid UTF-8'));
+});
+
+check('rewrite CLI: rejects print/aggregate/-e/-m combinations', () => {
+  for (const extra of [['--json'], ['-c'], ['-n'], ['-m', '1'], ['-e', 'x=b']]) {
+    const r = spawnSync('node', [CLI, 'b', '--add-class', 'x', ...extra],
+      { input: '<b>x</b>', encoding: 'utf8' });
+    assert.strictEqual(r.status, 2, `${extra.join(' ')} should be rejected`);
+  }
+});
+
+check('rewrite CLI: --parent retargets the edit to the container', () => {
+  const { stdout } = run(['.price', '--add-class', 'sale', '--parent', '1'],
+    { input: '<div class="card"><span class="price">4</span></div>' });
+  assert.strictEqual(stdout, '<div class="card sale"><span class="price">4</span></div>');
+});
+
 // --- teardown ---------------------------------------------------------------
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(failures ? `\n${failures} test(s) failed` : '\nall tests passed');

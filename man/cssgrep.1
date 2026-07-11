@@ -268,10 +268,61 @@ Globs for
 support
 .BR * " (within a path segment), " ** " (across " / ),
 .BR ? " (one non-slash char), and brace alternation like " *.{html,htm} .
+.SH REWRITING
+Five repeatable, freely combinable operations edit the matched elements
+instead of reporting them:
+.TP
+.BI \-\-add\-class " c"
+Add a class to each matched element (deduplicated; attribute created if
+missing).
+.TP
+.BI \-\-remove\-class " c"
+Remove a class; the attribute is dropped when emptied.
+.TP
+.BI \-\-set\-attr " k=v"
+Set attribute
+.I k
+to
+.IR v ,
+adding it if missing. The value is escaped.
+.TP
+.BI \-\-remove\-attr " k"
+Remove attribute
+.I k
+(all source occurrences).
+.TP
+.BI \-\-rename\-tag " t"
+Rename the element \(em its closing tag too, when one explicitly exists
+(voids like
+.IR <img> ,
+self-closing and implied closes are left without one).
+.TP
+.B \-\-diff
+Emit a unified diff instead of the rewritten document. Required for multiple
+files; apply with
+.BR git-apply (1)
+or
+.BR patch (1).
+.PP
+Only the matched tags' bytes change: matching runs once against the original
+document and edits are byte-splices, so quoting, entities and formatting
+everywhere else pass through untouched. Operations compose in a fixed order
+\(em rename \(-> remove-attr \(-> set-attr \(-> remove-class \(-> add-class
+\(em regardless of argument order.
+.B \-\-parent
+composes with rewriting. A single input prints the rewritten document to
+standard output;
+.B cssgrep
+never writes a file. Input that is not valid UTF-8 is refused (exit 2).
+Rewriting cannot be combined with
+.BR \-n ", " \-p ", " \-\-attr ", " \-\-text ", " \-\-json ", " \-c ", "
+.BR \-l ", " \-L ", " \-q ", " \-A / \-B / \-C ", " \-m / \-M ", " \-w ", "
+.BR \-0 " or " \-e .
+Exit status: 0 if anything was edited, 1 if nothing matched, 2 on error.
 .SH EXIT STATUS
 .TP
 .B 0
-One or more matches were found.
+One or more matches were found (or, when rewriting, edits were made).
 .TP
 .B 1
 No matches were found.
@@ -294,6 +345,9 @@ Extract attribute values for scripting:
 .TP
 Scrape several labeled fields in one pass:
 .B cssgrep \-e "title=h1" \-e "price=.card .price" \-\-json page.html
+.TP
+Rename every <b> to <strong> across a tree, review, then apply:
+.B cssgrep b \-\-rename\-tag strong \-r src/ \-\-diff | git apply
 .SH INVERTING MATCHES
 There is no
 .B \-v

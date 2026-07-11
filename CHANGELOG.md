@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Rewrite mode: `--add-class`, `--remove-class`, `--set-attr k=v`,
+  `--remove-attr` and `--rename-tag` edit the matched elements instead of
+  reporting them. Byte-splice fidelity: only the matched tags' bytes change.
+  A single input prints the rewritten document to stdout; `--diff` emits a
+  git-apply-able unified diff (required for multiple files) — cssgrep never
+  writes a file. Ops compose in a fixed order regardless of argv order;
+  non-UTF-8 input is refused. Also exposed to library consumers as
+  `doc.transform(selector, ops)` returning `{ html, edits }`.
 - `-e`/`--selector [label=]<sel>` (repeatable): search several selectors in
   one pass, each match tagged `[label]` in line mode and carrying a `label`
   field in `--json`. Unlabeled selectors are tagged with their own text.

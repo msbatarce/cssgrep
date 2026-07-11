@@ -38,8 +38,11 @@ HTML, run the selector, format matches.
   line index) into a document handle; `doc.search(selector, opts)` then runs
   any number of selectors against the same tree, returning plain-object
   matches (`{start, end, line, col, tag, attribs, html, text, node}` —
-  line/col/html/text lazy, `node` non-enumerable). Throws on bad
-  input/selector.
+  line/col/html/text lazy, `node` non-enumerable). `doc.transform(selector,
+  ops)` rewrites matched elements by byte-splicing only their tags, returning
+  `{html, edits}` (ops in fixed pipeline order; backed by a small opening-tag
+  lexer, since htmlparser2 has no attribute offsets). Throws on bad
+  input/selector/ops.
 - `lineIndex(src)` / `offsetToPosition(starts, src, off)` — precomputed line
   starts + binary search to turn a byte offset into 1-based `line:col` + the
   line text (strips trailing `\r` for CRLF files).
@@ -102,6 +105,11 @@ New output flags slot into three independent axes (see `ROADMAP.md` for detail):
 
 When adding an output feature, place it on the right axis and extend the
 validation matrix accordingly.
+
+The rewrite ops (`--add-class` etc., `--diff`) are a separate *program mode*,
+not a fourth axis: they exclude the print and aggregate axes entirely (only
+the Target axis, `--parent`, composes). `rewriteMain` in `cli.js` is that
+mode's `main`.
 
 ## Roadmap
 

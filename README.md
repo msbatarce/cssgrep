@@ -106,6 +106,12 @@ locator appears only with `-n`:
 | `-H`, `--with-filename` | Always print the `file:` prefix, even for a single file or stdin. |
 | `--no-filename` | Never print the `file:` prefix, even when searching multiple files. |
 | `--color[=<when>]` | Colorize output: `auto` (default — color only when stdout is a terminal), `always`, or `never`. A bare `--color` means `auto`, like grep; use `--color=always` to force color into pipes. |
+| `--add-class <c>` | *Rewrite:* add a class to each matched element. See [Rewriting HTML](#rewriting-html-refactor-ops). |
+| `--remove-class <c>` | *Rewrite:* remove a class (the attribute is dropped when emptied). |
+| `--set-attr <k=v>` | *Rewrite:* set attribute `k` to `v` (added if missing; value escaped). |
+| `--remove-attr <k>` | *Rewrite:* remove attribute `k` (all source occurrences). |
+| `--rename-tag <t>` | *Rewrite:* rename the element — its closing tag too, when one exists. |
+| `--diff` | Emit a unified diff instead of the rewritten document; required for multiple files. Apply with `git apply` or `patch`. |
 | `-h`, `--help` | Show help. |
 | `-V`, `--version` | Print the version and exit. |
 
@@ -194,6 +200,41 @@ which pattern matched. Print modes (`--text`, `--attr`, `-p`, `--json`) apply
 globally to every selector. With `-e`, positional arguments are always file
 paths — like `grep -e`, a mistyped path is reported as unreadable rather than
 re-guessed as a selector.
+
+### Rewriting HTML (refactor ops)
+
+The same selector engine can *edit* what it matches. Five ops — repeatable and
+freely combined — rewrite each matched element's tag in place:
+
+```sh
+$ cssgrep '.old' --remove-class old --add-class fresh page.html   # rewritten doc → stdout
+$ cssgrep 'b' --rename-tag strong -r src/ --diff                  # unified diff for many files
+$ cssgrep 'b' --rename-tag strong -r src/ --diff | git apply      # …review, then apply
+```
+
+The fidelity contract: **only the matched tags' bytes change.** Matching runs
+once against the original document, then edits are byte-splices — quoting,
+entities, whitespace and formatting everywhere else pass through untouched
+(the edited attribute itself is normalized to `name="value"`). Ops compose in
+a fixed order — rename → remove-attr → set-attr → remove-class → add-class —
+so results never depend on argument order. `--rename-tag` edits the closing
+tag only when one explicitly exists (voids like `<img>`, self-closing `<x/>`
+and implied closes like `<li>` are handled). `--parent` composes: `.price
+--add-class sale --parent 1` tags the container.
+
+cssgrep never writes a file: a single input prints the rewritten document to
+stdout; `--diff` (required for multiple files) emits a git-apply-able unified
+diff, so applying is a reviewable, revertable `git apply`/`patch` step. Input
+that isn't valid UTF-8 is refused (exit 2) — a rewriter must never corrupt
+bytes it didn't edit. Exit status: `0` if anything was edited, `1` if nothing
+matched, `2` on error.
+
+Rewrite is its own mode: it can't be combined with the print
+(`-n`/`-p`/`--attr`/`--text`/`--json`), aggregate (`-c`/`-l`/`-L`/`-q`),
+context, `-m`/`-M`, `-w`, `-0` or `-e` flags.
+
+The same operation is available to library consumers as
+`doc.transform(selector, ops)` — see [Library usage](#library-usage).
 
 ### Inverting matches (why there's no `-v`)
 
@@ -292,6 +333,16 @@ cannot parse. TypeScript types ship with the package (`index.d.ts`).
 
 Every match's `html` is the exact source slice, so offsets stay byte-faithful
 even on minified input — the same position tracking the CLI uses.
+
+The rewrite mode is exposed as `doc.transform(selector, ops)`:
+
+```js
+const { html, edits } = doc.transform('.old', {
+  removeClass: 'old', addClass: 'fresh',      // also: renameTag, setAttr,
+});                                           // removeAttr, parent
+// html  — the rewritten document (bytes outside the edits untouched)
+// edits — [{ start, end, before, after }] splice records, document order
+```
 
 ## How it works
 

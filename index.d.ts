@@ -35,6 +35,39 @@ export interface Match {
   node: unknown;
 }
 
+export interface TransformOps {
+  /** Rename each matched element (its closing tag too, when one exists). */
+  renameTag?: string;
+  /** Attribute name(s) to remove (all source occurrences). */
+  removeAttr?: string | string[];
+  /** Attributes to set: value replaced or attribute added; values escaped. */
+  setAttr?: Record<string, string>;
+  /** Class token(s) to remove; the attribute is dropped when emptied. */
+  removeClass?: string | string[];
+  /** Class token(s) to add (deduplicated; attribute created if missing). */
+  addClass?: string | string[];
+  /** Re-target each match to its n-th element ancestor first (--parent). */
+  parent?: number;
+}
+
+export interface Edit {
+  /** 0-based offset in the original html where this splice starts. */
+  start: number;
+  /** 0-based exclusive end offset in the original html. */
+  end: number;
+  /** The replaced source text (`doc.html.slice(start, end)`). */
+  before: string;
+  /** The replacement text. */
+  after: string;
+}
+
+export interface TransformResult {
+  /** The rewritten document; bytes outside the edits are untouched. */
+  html: string;
+  /** One record per splice, in document order. Empty when nothing matched. */
+  edits: Edit[];
+}
+
 export interface Document {
   /** The source string this document was parsed from. */
   html: string;
@@ -44,6 +77,13 @@ export interface Document {
    * selector css-select cannot parse.
    */
   search(selector: string, opts?: SearchOptions): Match[];
+  /**
+   * Rewrite the matched elements. Ops compose in a fixed pipeline order
+   * (rename → remove-attr → set-attr → remove-class → add-class) regardless
+   * of key order; matching runs once against the original tree. Throws on an
+   * invalid selector, invalid op names, or an empty ops object.
+   */
+  transform(selector: string, ops: TransformOps): TransformResult;
 }
 
 /**

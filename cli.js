@@ -70,6 +70,20 @@ Options:
   -h, --help             Show this help.
   -V, --version          Show version and exit.
 
+Rewrite (a separate mode: excludes -n/-p/--attr/--text/--json, -c/-l/-L/-q,
+-A/-B/-C, -m/-M, -w, -0 and -e; composes with --parent):
+      --add-class <c>    Add a class to each matched element.
+      --remove-class <c> Remove a class (attribute dropped when emptied).
+      --set-attr <k=v>   Set attribute k to v (added if missing).
+      --remove-attr <k>  Remove attribute k.
+      --rename-tag <t>   Rename the element (and its closing tag, if present).
+      --diff             Emit a unified diff instead of the document; required
+                         for multiple files. Apply with git apply / patch.
+
+A single input prints the rewritten document to stdout. Only the matched tags'
+bytes change; ops compose as rename -> remove-attr -> set-attr -> remove-class
+-> add-class regardless of argument order. Exit: 0 edits, 1 none, 2 error.
+
 Short flags combine (-rn) and a value attaches to its flag (-w100) or follows it
 (-w 100); a value-taking flag may close a cluster (-rnw100). Long options take a
 value with = or as the next word (--max-width=100, --ext htm).
@@ -139,6 +153,8 @@ function parseArgs(argv) {
     noFilename: false,
     noMessages: false,
     color: 'auto',
+    rewrite: { renameTag: null, removeAttr: [], setAttr: {}, removeClass: [], addClass: [] },
+    diff: false,
   };
   const setExts = v => {
     opts.extGiven = true;
@@ -229,6 +245,19 @@ function parseArgs(argv) {
         case '--context': setContext(value()); break;
         case '--color': case '--colour': opts.color = inline != null ? inline : 'auto'; break;
         case '--selector': addSelector(value()); break;
+        case '--add-class': opts.rewrite.addClass.push(value()); break;
+        case '--remove-class': opts.rewrite.removeClass.push(value()); break;
+        case '--remove-attr': opts.rewrite.removeAttr.push(value()); break;
+        case '--set-attr': {
+          const v = value();
+          const eq = v.indexOf('=');
+          const k = eq === -1 ? v : v.slice(0, eq);
+          if (!k) fail('--set-attr requires a name (name=value)');
+          opts.rewrite.setAttr[k] = eq === -1 ? '' : v.slice(eq + 1);
+          break;
+        }
+        case '--rename-tag': opts.rewrite.renameTag = value(); break;
+        case '--diff': opts.diff = true; break;
         case '--invert-match': failInvert(name); break;
         default: fail(`unknown option: ${name}`);
       }
@@ -292,6 +321,26 @@ function parseArgs(argv) {
   }
   if (opts.lineNumber && opts.count) fail('-n cannot be combined with -c');
   if (opts.lineNumber && opts.print) fail('-n cannot be combined with -p');
+  // Rewrite is its own program mode, not a fourth output axis: it emits a
+  // document (or a diff), so everything that shapes per-match output is
+  // meaningless with it.
+  const r = opts.rewrite;
+  opts.rewriteActive = Boolean(r.renameTag) || r.removeAttr.length > 0
+    || r.removeClass.length > 0 || r.addClass.length > 0
+    || Object.keys(r.setAttr).length > 0;
+  if (opts.diff && !opts.rewriteActive) fail('--diff requires a rewrite operation');
+  if (opts.rewriteActive) {
+    if (printModes > 0) fail('rewrite operations cannot be combined with -p/--attr/--text/--json');
+    if (aggregates > 0) fail('rewrite operations cannot be combined with -c/-l/-L/-q');
+    if (opts.before > 0 || opts.after > 0) fail('rewrite operations cannot be combined with -A/-B/-C');
+    if (opts.lineNumber) fail('rewrite operations cannot be combined with -n');
+    if (opts.maxWidth) fail('rewrite operations cannot be combined with -w');
+    if (opts.nul) fail('rewrite operations cannot be combined with -0');
+    if (opts.maxCount || opts.maxTotal) fail('rewrite operations cannot be combined with -m/-M');
+    if (opts.selectors.length) {
+      fail('rewrite takes a single positional selector (use a selector list like "a, b" instead of -e)');
+    }
+  }
   if (!['auto', 'always', 'never'].includes(opts.color)) {
     fail(`invalid --color value: ${opts.color} (expected auto, always or never)`);
   }
@@ -789,6 +838,173 @@ function looksBinary(buf) {
   return n > 0 && suspicious / n > 0.3;
 }
 
+// --- rewrite output -----------------------------------------------------------
+
+// Myers O(ND) shortest edit script over lines. Only ever runs on the middle
+// slice left after common prefix/suffix trimming, which transform()'s local
+// splices keep small.
+function myersDiff(a, b) {
+  const N = a.length, M = b.length, max = N + M, off = max;
+  if (max === 0) return [];
+  const trace = [];
+  const v = new Array(2 * max + 2).fill(0);
+  let D = -1;
+  for (let d = 0; d <= max && D < 0; d++) {
+    trace.push(v.slice());
+    for (let k = -d; k <= d; k += 2) {
+      let x = (k === -d || (k !== d && v[off + k - 1] < v[off + k + 1]))
+        ? v[off + k + 1]
+        : v[off + k - 1] + 1;
+      let y = x - k;
+      while (x < N && y < M && a[x] === b[y]) { x++; y++; }
+      v[off + k] = x;
+      if (x >= N && y >= M) { D = d; break; }
+    }
+  }
+  const script = [];
+  let x = N, y = M;
+  for (let d = D; d > 0; d--) {
+    const vp = trace[d];
+    const k = x - y;
+    const prevK = (k === -d || (k !== d && vp[off + k - 1] < vp[off + k + 1])) ? k + 1 : k - 1;
+    const prevX = vp[off + prevK], prevY = prevX - prevK;
+    while (x > prevX && y > prevY) { script.push({ t: ' ', l: a[--x] }); y--; }
+    if (x === prevX) script.push({ t: '+', l: b[--y] });
+    else script.push({ t: '-', l: a[--x] });
+  }
+  while (x > 0 && y > 0) { script.push({ t: ' ', l: a[--x] }); y--; }
+  while (x > 0) script.push({ t: '-', l: a[--x] });
+  while (y > 0) script.push({ t: '+', l: b[--y] });
+  return script.reverse();
+}
+
+// Unified diff of two documents, git-apply compatible: ---/+++ headers with
+// a/ b/ prefixes, 3 context lines, merged hunks, and "\ No newline at end of
+// file" markers when a side's last line is unterminated.
+function unifiedDiff(name, oldStr, newStr) {
+  const split = s => {
+    const lines = s.split('\n');
+    const noEol = lines[lines.length - 1] !== '';
+    if (!noEol) lines.pop();
+    return { lines, noEol };
+  };
+  const A = split(oldStr), B = split(newStr);
+  const a = A.lines, b = B.lines;
+  let pre = 0;
+  while (pre < a.length && pre < b.length && a[pre] === b[pre]) pre++;
+  let suf = 0;
+  while (suf < a.length - pre && suf < b.length - pre
+    && a[a.length - 1 - suf] === b[b.length - 1 - suf]) suf++;
+  const script = [
+    ...a.slice(0, pre).map(l => ({ t: ' ', l })),
+    ...myersDiff(a.slice(pre, a.length - suf), b.slice(pre, b.length - suf)),
+    ...a.slice(a.length - suf).map(l => ({ t: ' ', l })),
+  ];
+
+  // Old/new line number sitting *before* each script entry (1-based).
+  const oldPos = [], newPos = [];
+  let ol = 1, nl = 1;
+  for (const s of script) {
+    oldPos.push(ol);
+    newPos.push(nl);
+    if (s.t !== '+') ol++;
+    if (s.t !== '-') nl++;
+  }
+
+  // Group changes into hunks: 3 context lines, merge when gaps are ≤ 6.
+  const C = 3;
+  const hunks = [];
+  let i = 0;
+  while (i < script.length) {
+    if (script[i].t === ' ') { i++; continue; }
+    const hStart = Math.max(0, i - C);
+    let lastChange = i;
+    let j = i + 1;
+    while (j < script.length) {
+      if (script[j].t !== ' ') { lastChange = j; j++; continue; }
+      let k = j;
+      while (k < script.length && script[k].t === ' ') k++;
+      if (k === script.length || k - j > 2 * C) break;
+      j = k;
+    }
+    const hEnd = Math.min(script.length, lastChange + C + 1);
+    hunks.push([hStart, hEnd]);
+    i = hEnd;
+  }
+
+  const out = [`--- a/${name}`, `+++ b/${name}`];
+  for (const [s, e] of hunks) {
+    let oc = 0, nc = 0;
+    for (let k = s; k < e; k++) {
+      if (script[k].t !== '+') oc++;
+      if (script[k].t !== '-') nc++;
+    }
+    const os = oc ? oldPos[s] : oldPos[s] - 1;
+    const ns = nc ? newPos[s] : newPos[s] - 1;
+    out.push(`@@ -${os},${oc} +${ns},${nc} @@`);
+    for (let k = s; k < e; k++) {
+      const { t, l } = script[k];
+      out.push(t + l);
+      const atOldEnd = t !== '+' && oldPos[k] === a.length && A.noEol;
+      const atNewEnd = t !== '-' && newPos[k] === b.length && B.noEol;
+      if (atOldEnd || atNewEnd) out.push('\\ No newline at end of file');
+    }
+  }
+  return out.join('\n') + '\n';
+}
+
+// The rewrite program mode: transform each source and emit the document
+// (single input) or a unified diff (any number of files). Never writes a
+// file — apply diffs with git apply / patch (see ROADMAP Phase 9).
+function rewriteMain(opts, files, useStdin) {
+  if (!useStdin && files.length > 1 && !opts.diff) {
+    fail('rewriting multiple files requires --diff');
+  }
+  const sources = [];
+  if (useStdin) {
+    sources.push({ name: '(standard input)', buf: readStdin() });
+  } else {
+    for (const f of files) {
+      try {
+        sources.push({ name: f, buf: fs.readFileSync(f) });
+      } catch (e) {
+        if (!opts.noMessages) process.stderr.write(`cssgrep: ${f}: ${e.code || e.message}\n`);
+      }
+    }
+  }
+  let totalEdits = 0;
+  const diffs = [];
+  for (const { name, buf } of sources) {
+    // A rewriter must never corrupt bytes it didn't edit: binary input is
+    // never HTML, and a lossy UTF-8 decode written back would mangle every
+    // non-UTF-8 byte in the file — refuse both outright (exit 2).
+    if (looksBinary(buf)) fail(`${name}: binary input; refusing to rewrite`);
+    const src = buf.toString('utf8');
+    if (!Buffer.from(src, 'utf8').equals(buf)) {
+      fail(`${name}: not valid UTF-8; refusing to rewrite`);
+    }
+    let result;
+    try {
+      result = parse(src).transform(opts.selector, { ...opts.rewrite, parent: opts.parent });
+    } catch (e) {
+      if (e && e.message && /selector|tokeniz|parse/i.test(e.message)) {
+        fail(`invalid selector: ${opts.selector}`);
+      }
+      fail(e.message);
+    }
+    totalEdits += result.edits.length;
+    if (opts.diff) {
+      if (result.edits.length) diffs.push(unifiedDiff(name, src, result.html));
+    } else {
+      // Filter-friendly: the document is always emitted, changed or not
+      // (like sed); the exit status says whether anything was edited.
+      process.stdout.write(result.html);
+    }
+  }
+  if (diffs.length) process.stdout.write(diffs.join(''));
+  process.exitCode = totalEdits > 0 ? 0 : 1;
+}
+
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   resolveSelectorAndPaths(opts);
@@ -809,6 +1025,11 @@ function main() {
     files = opts.paths;
   } else {
     useStdin = true;
+  }
+
+  if (opts.rewriteActive) {
+    rewriteMain(opts, files, useStdin);
+    return;
   }
 
   // A label (file prefix) is shown when searching more than one file; -H forces
