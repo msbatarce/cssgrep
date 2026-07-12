@@ -3,11 +3,21 @@
 
 const fs = require('fs');
 const path = require('path');
-const render = require('dom-serializer').default;
-const { html: beautify } = require('js-beautify');
 const {
   parse, offsetToPosition, lineTextAt, textOf, collapseWs, ancestor,
 } = require('./lib.js');
+
+// dom-serializer + js-beautify are only needed by -p, and cost ~13 ms of a
+// ~43 ms startup (measured, ROADMAP Phase 11) — loaded on first use so the
+// grepprg-style hot path never pays for them.
+let render = null;
+let beautify = null;
+function loadPrettyPrinter() {
+  if (!render) {
+    render = require('dom-serializer').default;
+    beautify = require('js-beautify').html;
+  }
+}
 
 // Single source of truth for the version. A constant rather than a read of
 // package.json, so it survives compilation into a standalone binary (Bun
@@ -452,6 +462,7 @@ const HL_END = '';
 // highlight) is given and coloring is on, those nodes are wrapped in the match
 // color within the printed block.
 function prettyPrint(el, origins, opts) {
+  loadPrettyPrinter();
   const highlight = origins && origins.length && opts && opts.colorOn;
   const inserted = [];
   if (highlight) {
@@ -616,6 +627,9 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     out.push(label ? `${label}${fileSep}${limited.length}` : String(limited.length));
     return limited.length;
   }
+  // Nothing to emit: return before building the line index — a zero-match
+  // pass over a large file shouldn't pay a full line scan for nothing.
+  if (limited.length === 0) return 0;
   const starts = opts.print ? null : doc.lineStarts();
   // --parent re-targets matches to ancestors (no-op without it). Dedup is per
   // (ancestor, label), so two -e selectors sharing a container still report it
