@@ -23,7 +23,7 @@ Usage:
   cssgrep -e '[label=]<sel>' [-e ...] [file ...]
   cat file.html | cssgrep <selector>
 
-Output (one line per match):
+Output (each matching line once, like grep; with -n, one record per match):
   {line contents}                           (default; stdin or single file)
   {file}:{line contents}                    (default; multiple files)
   {line}:{col} {line contents}              (with -n; stdin or single file)
@@ -673,6 +673,11 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     return targets.length;
   }
   let emitted = 0;
+  // grep parity: without -n, a physical line prints once no matter how many
+  // matches sit on it (grep never repeats a line). With -n each match keeps
+  // its own line:col record — that per-match locator is the tool's point.
+  // Extraction modes print per-match values, so they never dedup.
+  const seenLines = (opts.lineNumber || opts.attr != null || opts.text) ? null : new Set();
   for (const { el, label: selLabel } of targets) {
     const c = opts.colorOn ? paint : (_, s) => s;
     // The [label] tag from -e; a null label (positional selector) prints none.
@@ -699,6 +704,10 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     } else if (opts.text) {
       text = c(COLORS.match, truncate(collapseWs(textOf(el)), opts.maxWidth));
     } else {
+      if (seenLines) {
+        if (seenLines.has(pos.line)) continue;    // this line already printed
+        seenLines.add(pos.line);
+      }
       const nodeEnd = (el.endIndex == null ? off : el.endIndex) + 1; // exclusive
       text = renderText(pos, off, nodeEnd, opts);
     }

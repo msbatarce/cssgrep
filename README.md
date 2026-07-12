@@ -61,9 +61,10 @@ cssgrep <selector> -r <dir ...>    # recurse directories
 cat page.html | cssgrep <selector> # read from stdin
 ```
 
-Output, one line per match. Like `grep`, the matched line is printed on its own;
-a `file:` prefix is added when searching multiple files, and the `line:col`
-locator appears only with `-n`:
+Like `grep`, each matching line is printed on its own, once — however many
+matches sit on it. With `-n` there is one record *per match*, each with its
+own `line:col` locator (that per-match precision is the point of the tool). A
+`file:` prefix is added when searching multiple files:
 
 ```
 {line contents}                         # default; stdin or single file

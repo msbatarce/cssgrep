@@ -46,15 +46,16 @@ skipped with a note on standard error, suppressible with
 .B \-s
 or
 .BR \-q .
-One line is printed per match.
 As with
 .BR grep ,
-the matched line is printed on its own; a
+each matching line is printed on its own, once \(em however many matches sit
+on it. With
+.B \-n
+there is one record per
+.IR match ,
+each with its own locator. A
 .RI " file :"
-prefix is added when searching multiple files, and the
-.IR line : col
-locator appears only with
-.BR \-n .
+prefix is added when searching multiple files.
 .SH OPTIONS
 .TP
 .BR \-e ", " \-\-selector " [\fIlabel\fR=]\fIsel\fR"
