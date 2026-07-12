@@ -26,7 +26,7 @@ function lineIndex(src) {
   return starts;
 }
 
-function offsetToPosition(starts, src, offset) {
+function offsetToPosition(starts, src, offset, state) {
   // binary search for the greatest line start <= offset
   let lo = 0, hi = starts.length - 1;
   while (lo < hi) {
@@ -35,11 +35,27 @@ function offsetToPosition(starts, src, offset) {
     else hi = mid - 1;
   }
   const lineStart = starts[lo];
-  let lineEnd = src.indexOf('\n', lineStart);
-  if (lineEnd === -1) lineEnd = src.length;
+  // The next line's start bounds this line (O(1)); an indexOf scan here is
+  // O(line length) *per match* — quadratic on minified single-line files.
+  const lineEnd = lo + 1 < starts.length ? starts[lo + 1] - 1 : src.length;
   // strip a trailing \r so CRLF files render cleanly
   let text = src.slice(lineStart, lineEnd);
   if (text.endsWith('\r')) text = text.slice(0, -1);
+  // bcol counts bytes from the line start — also quadratic if recomputed per
+  // match. `state` (one mutable object per source, supplied by the caller)
+  // remembers the previous match's byte count, so in-order matches on the
+  // same line pay only the delta; out-of-order falls back to a full count.
+  let bytes;
+  if (state && state.lineStart === lineStart && offset >= state.offset) {
+    bytes = state.bytes + Buffer.byteLength(src.slice(state.offset, offset), 'utf8');
+  } else {
+    bytes = Buffer.byteLength(src.slice(lineStart, offset), 'utf8');
+  }
+  if (state) {
+    state.lineStart = lineStart;
+    state.offset = offset;
+    state.bytes = bytes;
+  }
   return {
     line: lo + 1,            // 1-based
     // col in UTF-16 code units: a JS string index into `text`, used by the
@@ -47,7 +63,7 @@ function offsetToPosition(starts, src, offset) {
     // and terminals count bytes, so non-ASCII text before the match would
     // otherwise land the cursor short.
     col: offset - lineStart + 1, // 1-based
-    bcol: Buffer.byteLength(src.slice(lineStart, offset), 'utf8') + 1, // 1-based
+    bcol: bytes + 1,             // 1-based
     text,
   };
 }
@@ -56,8 +72,7 @@ function offsetToPosition(starts, src, offset) {
 // line's byte start (so a node's offset maps to a column within it).
 function lineTextAt(starts, src, lineNo) {
   const lineStart = starts[lineNo - 1];
-  let lineEnd = src.indexOf('\n', lineStart);
-  if (lineEnd === -1) lineEnd = src.length;
+  const lineEnd = lineNo < starts.length ? starts[lineNo] - 1 : src.length;
   let text = src.slice(lineStart, lineEnd);
   if (text.endsWith('\r')) text = text.slice(0, -1);
   return { lineStart, text };
@@ -296,7 +311,8 @@ function parse(html) {
   });
   let starts = null;
   const lineStarts = () => starts || (starts = lineIndex(html));
-  const position = offset => offsetToPosition(lineStarts(), html, offset);
+  const posState = {};   // incremental byte-column cache, scoped to this doc
+  const position = offset => offsetToPosition(lineStarts(), html, offset, posState);
   return {
     html,
     // Internal (unstable): the raw htmlparser2 document and the cached

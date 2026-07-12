@@ -83,6 +83,16 @@ HTML, run the selector, format matches.
   `README.md`, the man page (`man/cssgrep.1`), and the three completion files
   (`completions/cssgrep.bash`, `completions/_cssgrep`, `completions/cssgrep.fish`).
 
+### Releases
+
+- **Release small and often.** When a user-visible feature lands, cut a
+  release promptly (decided 2026-07-07, after v1.3.0 batched four features)
+  rather than accumulating several roadmap phases into one version.
+- Release recipe: bump `VERSION` in `cli.js`, `package.json` (+ lockfile) and
+  the man page `.TH`; roll the CHANGELOG's `[Unreleased]` into the new
+  version (+ compare links); PR; then push a `vX.Y.Z` tag — the release
+  workflow builds binaries, cuts the GitHub Release, and publishes to npm.
+
 ### Commits
 
 - **One commit per feature.** Each implemented feature (or roadmap phase item)

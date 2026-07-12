@@ -108,6 +108,13 @@ check('-n single file: no file prefix', () => {
   assert.strictEqual(stdout.trimEnd(), '5:5     <p id="x">two</p>');
 });
 
+check('default mode prints a matching line once, like grep (minified)', () => {
+  // Two matches share the single physical line; grep prints the line once.
+  const { stdout, status } = run(['.hit'], { input: minified });
+  assert.strictEqual(status, 0);
+  assert.strictEqual(stdout.trimEnd(), minified);
+});
+
 check('-n minified single line: distinct columns on line 1', () => {
   const { stdout } = run(['.hit', '-n'], { input: minified });
   const lines = stdout.trimEnd().split('\n');

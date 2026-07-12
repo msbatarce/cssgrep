@@ -3,17 +3,27 @@
 
 const fs = require('fs');
 const path = require('path');
-const render = require('dom-serializer').default;
-const { html: beautify } = require('js-beautify');
 const {
   parse, offsetToPosition, lineTextAt, textOf, collapseWs, ancestor,
 } = require('./lib.js');
+
+// dom-serializer + js-beautify are only needed by -p, and cost ~13 ms of a
+// ~43 ms startup (measured, ROADMAP Phase 11) — loaded on first use so the
+// grepprg-style hot path never pays for them.
+let render = null;
+let beautify = null;
+function loadPrettyPrinter() {
+  if (!render) {
+    render = require('dom-serializer').default;
+    beautify = require('js-beautify').html;
+  }
+}
 
 // Single source of truth for the version. A constant rather than a read of
 // package.json, so it survives compilation into a standalone binary (Bun
 // --compile / Node SEA), where package.json won't sit next to the executable.
 // Keep in sync with package.json on release.
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 
 const USAGE = `cssgrep - search HTML by CSS selector, grep-style.
 
@@ -23,7 +33,7 @@ Usage:
   cssgrep -e '[label=]<sel>' [-e ...] [file ...]
   cat file.html | cssgrep <selector>
 
-Output (one line per match):
+Output (each matching line once, like grep; with -n, one record per match):
   {line contents}                           (default; stdin or single file)
   {file}:{line contents}                    (default; multiple files)
   {line}:{col} {line contents}              (with -n; stdin or single file)
@@ -452,6 +462,7 @@ const HL_END = '';
 // highlight) is given and coloring is on, those nodes are wrapped in the match
 // color within the printed block.
 function prettyPrint(el, origins, opts) {
+  loadPrettyPrinter();
   const highlight = origins && origins.length && opts && opts.colorOn;
   const inserted = [];
   if (highlight) {
@@ -529,9 +540,10 @@ function emitContext(src, starts, name, showLabel, targets, opts, out) {
   // Map each match line to a representative node span (the first match on it),
   // which drives the in-line highlight — and the [label] tag — when emitting.
   const info = new Map();
+  const posState = {};
   for (const { el, label: selLabel } of targets) {
     const off = el.startIndex == null ? 0 : el.startIndex;
-    const pos = offsetToPosition(starts, src, off);
+    const pos = offsetToPosition(starts, src, off, posState);
     if (info.has(pos.line)) continue;
     const nodeEnd = (el.endIndex == null ? off : el.endIndex) + 1;
     info.set(pos.line, { off, nodeEnd, pos, selLabel });
@@ -615,6 +627,9 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     out.push(label ? `${label}${fileSep}${limited.length}` : String(limited.length));
     return limited.length;
   }
+  // Nothing to emit: return before building the line index — a zero-match
+  // pass over a large file shouldn't pay a full line scan for nothing.
+  if (limited.length === 0) return 0;
   const starts = opts.print ? null : doc.lineStarts();
   // --parent re-targets matches to ancestors (no-op without it). Dedup is per
   // (ancestor, label), so two -e selectors sharing a container still report it
@@ -657,9 +672,10 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     // slice; newlines are escaped by JSON.stringify, so each record stays on
     // one line. Ignores --color and -n (line/col are always present). `label`
     // appears only with -e.
+    const posState = {};
     for (const { el, label: selLabel } of targets) {
       const off = el.startIndex == null ? 0 : el.startIndex;
-      const pos = offsetToPosition(starts, src, off);
+      const pos = offsetToPosition(starts, src, off, posState);
       const nodeEnd = (el.endIndex == null ? off : el.endIndex) + 1;
       out.push(JSON.stringify({
         file: name,
@@ -673,6 +689,12 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     return targets.length;
   }
   let emitted = 0;
+  // grep parity: without -n, a physical line prints once no matter how many
+  // matches sit on it (grep never repeats a line). With -n each match keeps
+  // its own line:col record — that per-match locator is the tool's point.
+  // Extraction modes print per-match values, so they never dedup.
+  const seenLines = (opts.lineNumber || opts.attr != null || opts.text) ? null : new Set();
+  const posState = {};
   for (const { el, label: selLabel } of targets) {
     const c = opts.colorOn ? paint : (_, s) => s;
     // The [label] tag from -e; a null label (positional selector) prints none.
@@ -687,7 +709,7 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
       continue;
     }
     const off = el.startIndex == null ? 0 : el.startIndex;
-    const pos = offsetToPosition(starts, src, off);
+    const pos = offsetToPosition(starts, src, off, posState);
 
     // Choose the content printed for this match. --attr/--text replace the
     // source line with the extracted value (whole value highlighted as the
@@ -699,6 +721,10 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     } else if (opts.text) {
       text = c(COLORS.match, truncate(collapseWs(textOf(el)), opts.maxWidth));
     } else {
+      if (seenLines) {
+        if (seenLines.has(pos.line)) continue;    // this line already printed
+        seenLines.add(pos.line);
+      }
       const nodeEnd = (el.endIndex == null ? off : el.endIndex) + 1; // exclusive
       text = renderText(pos, off, nodeEnd, opts);
     }
@@ -1225,11 +1251,29 @@ function main() {
     // For -l/-L, -0 NUL-terminates each file name (no newline) so the list is
     // safe for `xargs -0`. Other modes keep newline-separated records (with -0
     // the NUL appears only as the in-record file-name separator).
-    if (opts.nul && (opts.filesWithMatches || opts.filesWithoutMatch)) {
-      process.stdout.write(out.map(s => s + '\0').join(''));
-    } else {
-      process.stdout.write(out.join('\n') + '\n');
+    //
+    // Written in byte-bounded chunks, never as one join of everything: with
+    // enough (or long enough) result lines a single joined string exceeds
+    // V8's maximum string length and crashes — observed with 40k matches on
+    // an 8 MB minified line. Writes queue; process.exitCode (not exit())
+    // keeps them flush-safe.
+    const nulList = opts.nul && (opts.filesWithMatches || opts.filesWithoutMatch);
+    const CHUNK_BYTES = 32 << 20;             // ~32 MB per write
+    let batch = [];
+    let bytes = 0;
+    const flush = () => {
+      if (!batch.length) return;
+      process.stdout.write(nulList ? batch.map(s => s + '\0').join('')
+        : batch.join('\n') + '\n');
+      batch = [];
+      bytes = 0;
+    };
+    for (const line of out) {
+      batch.push(line);
+      bytes += line.length + 1;
+      if (bytes >= CHUNK_BYTES) flush();
     }
+    flush();
   }
   // Normally success means "a match was found". With -L it means "a file
   // without a match was printed", which is decoupled from the match total.

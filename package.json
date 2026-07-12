@@ -1,6 +1,6 @@
 {
   "name": "cssgrep",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Search HTML by CSS selector and print matches grep-style (file:line:col with -n).",
   "main": "lib.js",
   "types": "index.d.ts",
@@ -37,7 +37,8 @@
     "build:darwin-arm64": "bun build ./cli.js --compile --target=bun-darwin-arm64 --outfile dist/cssgrep-darwin-arm64",
     "build:windows-x64": "bun build ./cli.js --compile --target=bun-windows-x64 --outfile dist/cssgrep-windows-x64.exe",
     "build:binaries": "npm run build:linux-x64 && npm run build:linux-arm64 && npm run build:darwin-x64 && npm run build:darwin-arm64 && npm run build:windows-x64",
-    "build:sea": "node scripts/build-sea.js"
+    "build:sea": "node scripts/build-sea.js",
+    "bench": "node bench/bench.js"
   },
   "keywords": [
     "css",
