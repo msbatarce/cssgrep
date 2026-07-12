@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Large result sets no longer crash with `RangeError: Invalid string length`
+  (exit 1, zero output): output is written in byte-bounded chunks instead of
+  one giant join. Observed with 40k matches on an 8 MB minified line.
+- Emitting many matches on one physical line was quadratic (two O(line)
+  scans per match); the same 40k-locator case dropped from 9.4 s to 0.4 s.
+  Found by the new `npm run bench` harness.
+
+### Changed
+- grep parity: without `-n`, a matching line now prints once, however many
+  matches sit on it. With `-n` there is still one record per match, each
+  with its own `line:col` locator.
+- Startup no longer loads the pretty-printing dependencies unless `-p` is
+  used (43.4 → 37.9 ms measured), and zero-match files skip the line index.
+
 ## [1.3.0] - 2026-07-07
 
 ### Added

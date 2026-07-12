@@ -6,8 +6,8 @@ grep-family flags plus HTML-specific capabilities plain grep can't offer.
 **Process:** implement in phase order. **Each feature is its own commit** (code +
 tests + docs, suite green) — see `CLAUDE.md`. Phases are independently shippable.
 
-**Status: Phases 0–10 are done (7 resolved as "no flag" — see below); Phase
-11 (performance) is planned, with design decisions open.** Phases 0–4 shipped:
+**Status: all phases (0–11) are done (7 resolved as "no flag" — see below).**
+Phases 0–4 shipped:
 `-m`, `-l`/`-L`/`-q`, `--attr`/`--text`, `--json`, `-0`/`--null`, `--parent`,
 and `-A`/`-B`/`-C`. This file is kept as the design record; future work can
 extend it.
@@ -384,7 +384,7 @@ integration.
   event-bookkeeping, identical semantics to a non-watch run. A directory scan
   per rerun is fine at HTML-project scale.
 
-## Phase 11 — Performance round (measure first)
+## Phase 11 — Performance round (measure first) — implemented 2026-07-07
 
 Investigation phase: no optimization lands without a benchmark showing it
 matters.
@@ -435,7 +435,23 @@ deep 2000-nest: .leaf --text                   61 ms
 **Fix plan (one commit each):** grep-parity line dedup in no-locator line
 mode; chunked stdout writes (no giant join); incremental per-line byte-column
 cache; lazy-require the `-p`-only deps (+ the zero-match `lineIndex` guard).
-Re-run the bench and record the after numbers below.
+All four shipped 2026-07-07.
+
+**After (same machine, same day):**
+
+```
+startup: --version                             37.9 ms   (was 43.4)
+huge 8MB minified: .price (40k matches)         406 ms   (was: CRASHED)
+huge 8MB minified: -n -w60 (40k locators)       414 ms   (was 9400)
+huge 8MB minified: zero matches                 275 ms   (was 298)
+tree 1000 files: -rn .hit (100 hits)             79 ms   (was 92)
+deep 2000-nest: .leaf --text                     52 ms   (was 61)
+```
+
+The many-match emission path went from quadratic (or fatal) to
+parse-dominated; the startup saving is smaller than the deps' standalone
+require cost because dom-serializer shares domhandler/entities with
+htmlparser2, which every mode loads anyway.
 
 ### Downstream (not in this repo)
 
