@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-07-07
+
 ### Fixed
 - Large result sets no longer crash with `RangeError: Invalid string length`
   (exit 1, zero output): output is written in byte-bounded chunks instead of
@@ -123,7 +125,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `-0`/`--null`, `--color`, `-w`/`--max-width`, `-V`/`--version`.
 - Standalone binaries (Bun, Node SEA), shell completions, and a man page.
 
-[Unreleased]: https://github.com/msbatarce/cssgrep/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/msbatarce/cssgrep/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/msbatarce/cssgrep/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/msbatarce/cssgrep/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/msbatarce/cssgrep/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/msbatarce/cssgrep/compare/v1.0.0...v1.1.0
