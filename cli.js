@@ -1234,11 +1234,29 @@ function main() {
     // For -l/-L, -0 NUL-terminates each file name (no newline) so the list is
     // safe for `xargs -0`. Other modes keep newline-separated records (with -0
     // the NUL appears only as the in-record file-name separator).
-    if (opts.nul && (opts.filesWithMatches || opts.filesWithoutMatch)) {
-      process.stdout.write(out.map(s => s + '\0').join(''));
-    } else {
-      process.stdout.write(out.join('\n') + '\n');
+    //
+    // Written in byte-bounded chunks, never as one join of everything: with
+    // enough (or long enough) result lines a single joined string exceeds
+    // V8's maximum string length and crashes — observed with 40k matches on
+    // an 8 MB minified line. Writes queue; process.exitCode (not exit())
+    // keeps them flush-safe.
+    const nulList = opts.nul && (opts.filesWithMatches || opts.filesWithoutMatch);
+    const CHUNK_BYTES = 32 << 20;             // ~32 MB per write
+    let batch = [];
+    let bytes = 0;
+    const flush = () => {
+      if (!batch.length) return;
+      process.stdout.write(nulList ? batch.map(s => s + '\0').join('')
+        : batch.join('\n') + '\n');
+      batch = [];
+      bytes = 0;
+    };
+    for (const line of out) {
+      batch.push(line);
+      bytes += line.length + 1;
+      if (bytes >= CHUNK_BYTES) flush();
     }
+    flush();
   }
   // Normally success means "a match was found". With -L it means "a file
   // without a match was printed", which is decoupled from the match total.
