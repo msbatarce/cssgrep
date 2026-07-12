@@ -389,26 +389,53 @@ integration.
 Investigation phase: no optimization lands without a benchmark showing it
 matters.
 
-- **Item 1 — bench harness.** `bench/` with generated fixtures (one huge
-  minified single-line file; thousands of small files; a deep-nesting doc) and
-  an `npm run bench` script printing wall time + RSS. Record the baseline
-  numbers here.
-- Suspects to measure, cheapest first:
-  - **Startup latency** — matters most for the vim `grepprg` use case. All
-    four deps are `require`d unconditionally, but `js-beautify` and
-    `dom-serializer` are only needed for `-p`: lazy-require them — likely the
-    biggest cheap win.
-  - `lineIndex` is built per file even with zero matches — build lazily on
-    first emit.
-  - Whole-file DOM in memory: fine for the tool's scope? Declare an explicit
-    non-goal, or sketch a streaming plan.
-  - Serial file processing under `-r`: worker threads vs keep-simple.
+- **Item 1 — bench harness.** `bench/bench.js` (`npm run bench`): generated
+  fixtures (8 MB minified single line with 40k matches; a 1000-file tree; a
+  2000-deep nesting doc), median wall times of the CLI as a subprocess, peak
+  RSS via child `resourceUsage`.
 
-**Design questions:**
-- Concrete targets (e.g. cold start < 80 ms; a parse+select budget for a
-  50 MB minified file)?
-- Do benches run in CI as a regression gate, or stay manual?
-- Is parallelism worth the complexity under the dependency-light rule?
+**Baseline (2026-07-07, node 22, Linux x64, dev machine):**
+
+```
+startup: --version                             43.4 ms
+huge 8MB minified: .price (40k matches)      CRASHES (RangeError, exit 1)
+huge 8MB minified: -q (existence only)        359 ms
+huge 8MB minified: -c (count only)            360 ms
+huge 8MB minified: zero matches               298 ms
+tree 1000 files: -rn .hit (100 hits)           92 ms   60 MB peak
+deep 2000-nest: .leaf --text                   61 ms
+```
+
+**Findings (the harness paid for itself on day one):**
+
+1. **Many matches on one physical line is broken** — the marquee minified
+   use case. (a) Default line mode prints the whole physical line once *per
+   match*, where grep prints a matching line *once*: 40k copies of an 8 MB
+   line. (b) All output is built as a single `out.join('\n')` string, which
+   blows V8's max string length → `RangeError`, exit 1, zero output. (c)
+   `bcol` recomputes `Buffer.byteLength` of the line prefix per match —
+   O(offset) per match, quadratic per line.
+2. **Startup** is 43 ms; `js-beautify` + `dom-serializer` account for ~13 ms
+   and are only needed by `-p` → lazy-require them (~30% cut for `grepprg`).
+3. `lineIndex` on a zero-match 8 MB file is a few ms of a ~300 ms
+   parse-dominated run — build it only when something will be emitted (free
+   one-line guard).
+
+**Decisions (2026-07-07):**
+- **Benches run manually**, never as a CI gate — runner timing is too noisy.
+  Compare on one machine before/after.
+- **Parallel file processing: not worth it.** 1000 files scan in ~92 ms
+  serially; worker threads would add complexity for a regime (thousands of
+  files) the tool doesn't operate in. Revisit only with a real workload.
+- **Streaming parse: explicit non-goal.** css-select needs the full tree, and
+  whole-file DOM at 8 MB costs ~200 MB peak — acceptable for HTML documents.
+- **No hard startup target**; 43 → ~30 ms via lazy-require is the win worth
+  taking.
+
+**Fix plan (one commit each):** grep-parity line dedup in no-locator line
+mode; chunked stdout writes (no giant join); incremental per-line byte-column
+cache; lazy-require the `-p`-only deps (+ the zero-match `lineIndex` guard).
+Re-run the bench and record the after numbers below.
 
 ### Downstream (not in this repo)
 
