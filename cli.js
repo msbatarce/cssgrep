@@ -529,9 +529,10 @@ function emitContext(src, starts, name, showLabel, targets, opts, out) {
   // Map each match line to a representative node span (the first match on it),
   // which drives the in-line highlight — and the [label] tag — when emitting.
   const info = new Map();
+  const posState = {};
   for (const { el, label: selLabel } of targets) {
     const off = el.startIndex == null ? 0 : el.startIndex;
-    const pos = offsetToPosition(starts, src, off);
+    const pos = offsetToPosition(starts, src, off, posState);
     if (info.has(pos.line)) continue;
     const nodeEnd = (el.endIndex == null ? off : el.endIndex) + 1;
     info.set(pos.line, { off, nodeEnd, pos, selLabel });
@@ -657,9 +658,10 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     // slice; newlines are escaped by JSON.stringify, so each record stays on
     // one line. Ignores --color and -n (line/col are always present). `label`
     // appears only with -e.
+    const posState = {};
     for (const { el, label: selLabel } of targets) {
       const off = el.startIndex == null ? 0 : el.startIndex;
-      const pos = offsetToPosition(starts, src, off);
+      const pos = offsetToPosition(starts, src, off, posState);
       const nodeEnd = (el.endIndex == null ? off : el.endIndex) + 1;
       out.push(JSON.stringify({
         file: name,
@@ -678,6 +680,7 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
   // its own line:col record — that per-match locator is the tool's point.
   // Extraction modes print per-match values, so they never dedup.
   const seenLines = (opts.lineNumber || opts.attr != null || opts.text) ? null : new Set();
+  const posState = {};
   for (const { el, label: selLabel } of targets) {
     const c = opts.colorOn ? paint : (_, s) => s;
     // The [label] tag from -e; a null label (positional selector) prints none.
@@ -692,7 +695,7 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
       continue;
     }
     const off = el.startIndex == null ? 0 : el.startIndex;
-    const pos = offsetToPosition(starts, src, off);
+    const pos = offsetToPosition(starts, src, off, posState);
 
     // Choose the content printed for this match. --attr/--text replace the
     // source line with the extracted value (whole value highlighted as the

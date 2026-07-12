@@ -98,6 +98,7 @@ console.log(`cssgrep bench — node ${process.version}, ${os.type()} ${os.arch()
 bench('startup: --version', ['--version'], { runs: 15 });
 bench('startup: no-match stdin-less run', ['.x', 'tree/d0/f1.html'], { runs: 15 });
 bench('huge 8MB minified: .price (40k matches)', ['.price', 'huge-minified.html'], { rss: true });
+bench('huge 8MB minified: -n -w60 (40k locators)', ['.price', '-n', '-w60', 'huge-minified.html'], { runs: 3 });
 bench('huge 8MB minified: -q (existence only)', ['.price', '-q', 'huge-minified.html']);
 bench('huge 8MB minified: -c (count only)', ['.price', '-c', 'huge-minified.html']);
 bench('huge 8MB minified: zero matches', ['.nomatch', 'huge-minified.html']);
