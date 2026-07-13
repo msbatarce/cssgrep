@@ -90,7 +90,7 @@ own `line:col` locator (that per-match precision is the point of the tool). A
 | `-p`, `--print` | Pretty-print the matched node's HTML, re-indented from scratch (works on minified input). No `line:col` locator is shown. |
 | `--attr <name>` | Print the value of attribute `<name>` for each match (nodes without it are skipped; if every match is skipped the exit status is 1). The name is matched case-insensitively. Honors `-n` and `-w`. |
 | `--text` | Print the matched node's text content, whitespace collapsed. Honors `-n` and `-w`. |
-| `--json` | Print one JSON object per match (NDJSON), with `file`, `line`, `col`, `html`, `text` — plus `label` when `-e` is used. |
+| `--json` | Print one JSON object per match (NDJSON), with `file`, `line`, `col`, `attribs` (the element's attributes, names lowercased), `html`, `text` — plus `label` when `-e` is used. |
 | `--parent <n>` | Report the `n`-th element ancestor of each match instead of the match itself (de-duplicated). Pairs well with `-p`. |
 | `-w`, `--max-width <n>` | Truncate the shown line to `n` columns (adds `…`). Value attaches or follows: `-w100`, `-w 100`, `--max-width=100`. |
 | `-A`, `--after-context <n>` | Print `n` source lines after each match. |
@@ -187,8 +187,8 @@ $ cssgrep -n -e 'title=h1' -e 'price=.card .price' page.html
 9:12 [price] <span class="price">$4.99</span>
 
 $ cssgrep --json -e 'title=h1' -e 'price=.card .price' page.html
-{"file":"page.html","line":3,"col":5,"label":"title","html":"<h1>Widget</h1>","text":"Widget"}
-{"file":"page.html","line":9,"col":12,"label":"price","html":"...","text":"$4.99"}
+{"file":"page.html","line":3,"col":5,"label":"title","attribs":{},"html":"<h1>Widget</h1>","text":"Widget"}
+{"file":"page.html","line":9,"col":12,"label":"price","attribs":{"class":"price"},"html":"...","text":"$4.99"}
 ```
 
 The label is anything matching `[A-Za-z_][A-Za-z0-9_-]*` before a `=`; since a

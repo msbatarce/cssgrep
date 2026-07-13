@@ -58,7 +58,7 @@ Options:
       --attr <name>      Print the value of attribute <name> (skips nodes without it).
       --text             Print the matched node's text content (whitespace collapsed).
       --json             Print one JSON record per match (NDJSON: file,line,col,
-                         html,text; plus label with -e).
+                         attribs,html,text; plus label with -e).
       --parent <n>       Report the n-th ancestor of each match instead (dedup'd).
   -w, --max-width <n>    Truncate the shown line to <n> columns (ellipsis added).
   -A, --after-context <n>    Print <n> source lines after each match.
@@ -668,10 +668,11 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
   // matches lacking the attribute, and --parent dedup can merge several
   // matches into one printed ancestor.
   if (opts.json) {
-    // NDJSON: one self-contained record per match. `html` is the exact source
-    // slice; newlines are escaped by JSON.stringify, so each record stays on
-    // one line. Ignores --color and -n (line/col are always present). `label`
-    // appears only with -e.
+    // NDJSON: one self-contained record per match. `attribs` mirrors the lib
+    // Match's field (names lowercased by the parser) so scraping never needs
+    // a second pass; `html` is the exact source slice; newlines are escaped
+    // by JSON.stringify, so each record stays on one line. Ignores --color
+    // and -n (line/col are always present). `label` appears only with -e.
     const posState = {};
     for (const { el, label: selLabel } of targets) {
       const off = el.startIndex == null ? 0 : el.startIndex;
@@ -682,6 +683,7 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
         line: pos.line,
         col: pos.bcol,
         ...(selLabel !== null && { label: selLabel }),
+        attribs: el.attribs || {},
         html: src.slice(off, nodeEnd),
         text: collapseWs(textOf(el)),
       }));

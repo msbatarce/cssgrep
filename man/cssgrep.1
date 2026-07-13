@@ -159,11 +159,13 @@ Print the matched node's text content, whitespace collapsed.
 .TP
 .B \-\-json
 Print one JSON object per match (NDJSON) with
-.IR file ", " line ", " col ", " html ", " text
+.IR file ", " line ", " col ", " attribs ", " html ", " text
 (plus
 .I label
 with
 .BR \-e ).
+.I attribs
+is the element's attribute object, names lowercased by the parser.
 .TP
 .BI \-\-parent " n"
 Report the

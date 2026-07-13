@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `--json` records now include `attribs`, the matched element's attribute
+  object (names lowercased by the parser) — the same field the library's
+  `Match` exposes, so scraping pipelines get attribute data without a second
+  pass (e.g. `jq -r .attribs.href`).
+
 ## [1.4.0] - 2026-07-07
 
 ### Fixed

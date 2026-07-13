@@ -375,7 +375,9 @@ check('--json emits one parseable record per match with expected fields', () => 
   const { stdout } = run(['div.a', '--json'], { input: multiline });
   const recs = stdout.trimEnd().split('\n').map(l => JSON.parse(l));
   assert.strictEqual(recs.length, 2);
-  assert.deepStrictEqual(Object.keys(recs[0]).sort(), ['col', 'file', 'html', 'line', 'text']);
+  assert.deepStrictEqual(Object.keys(recs[0]).sort(),
+    ['attribs', 'col', 'file', 'html', 'line', 'text']);
+  assert.deepStrictEqual(recs[0].attribs, { class: 'a' });
   assert.strictEqual(recs[0].file, '(standard input)');
   assert.strictEqual(recs[0].line, 4);
   assert.strictEqual(recs[0].col, 5);
@@ -981,6 +983,14 @@ check('-e: an unlabeled selector is tagged with its own text', () => {
 check('-e: a leading attribute selector is not mistaken for a label', () => {
   const { stdout } = run(['--text', '-e', '[href]'], { input: multiSel });
   assert.strictEqual(stdout.trimEnd(), '[[href]] buy');
+});
+
+check('--json: records carry the attribs object (empty when none)', () => {
+  const rec = JSON.parse(run(['a', '--json'],
+    { input: '<a href="/x" CLASS="ext">go</a>' }).stdout.trim());
+  assert.deepStrictEqual(rec.attribs, { href: '/x', class: 'ext' }); // names lowercased
+  const bare = JSON.parse(run(['b', '--json'], { input: '<b>x</b>' }).stdout.trim());
+  assert.deepStrictEqual(bare.attribs, {});
 });
 
 check('-e: --json records carry the label; without -e they do not', () => {
