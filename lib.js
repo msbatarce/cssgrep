@@ -115,6 +115,120 @@ function retarget(nodes, opts) {
   return result;
 }
 
+// --- embedded HTML (JS/TS template literals) -----------------------------------
+
+// Replace every char except line breaks with a space: masked text has the
+// same length AND the same line structure as the original, so offsets and
+// the host file's line index stay valid.
+const maskWs = s => s.replace(/[^\n\r]/g, ' ');
+
+// Skip a '...' or "..." string; `i` is at the opening quote. Returns the
+// index just past the closing quote (or line end / EOF for unterminated).
+function skipJsString(src, i) {
+  const quote = src[i++];
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '\\') { i += 2; continue; }
+    if (c === quote) return i + 1;
+    if (c === '\n') return i;              // unterminated: resync at newline
+    i++;
+  }
+  return i;
+}
+
+// Skip code until the '}' that closes a template hole (depth-balanced),
+// recursing into strings, comments and nested template literals — a nested
+// literal contributes its own fragments. `i` is just past '${'.
+function skipJsCode(src, i, fragments) {
+  let depth = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === "'" || c === '"') { i = skipJsString(src, i); continue; }
+    if (c === '`') { i = readTemplate(src, i, fragments); continue; }
+    if (c === '/' && src[i + 1] === '/') {
+      const nl = src.indexOf('\n', i);
+      if (nl === -1) return src.length;
+      i = nl + 1;
+      continue;
+    }
+    if (c === '/' && src[i + 1] === '*') {
+      const end = src.indexOf('*/', i + 2);
+      if (end === -1) return src.length;
+      i = end + 2;
+      continue;
+    }
+    if (c === '{') depth++;
+    else if (c === '}') {
+      if (depth === 0) return i + 1;
+      depth--;
+    }
+    i++;
+  }
+  return i;
+}
+
+// Read one template literal; `i` is at the opening backtick. Masks every
+// `${…}` hole to same-length whitespace and, when the masked content sniffs
+// as markup (`<` + letter, or `<!`), records it as a fragment. Returns the
+// index just past the closing backtick. Nested literals inside holes are
+// processed first, so their fragments are collected too.
+function readTemplate(src, i, fragments) {
+  const contentStart = ++i;
+  const holes = [];
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '\\') { i += 2; continue; }
+    if (c === '`') break;
+    if (c === '$' && src[i + 1] === '{') {
+      const holeStart = i;
+      i = skipJsCode(src, i + 2, fragments);
+      holes.push([holeStart, i]);
+      continue;
+    }
+    i++;
+  }
+  const contentEnd = Math.min(i, src.length);
+  let masked = src.slice(contentStart, contentEnd);
+  for (const [hs, he] of holes) {
+    const a = hs - contentStart;
+    const b = Math.min(he, contentEnd) - contentStart;
+    masked = masked.slice(0, a) + maskWs(masked.slice(a, b)) + masked.slice(b);
+  }
+  if (/<[a-zA-Z!]/.test(masked)) fragments.push({ start: contentStart, masked });
+  return contentEnd + 1;
+}
+
+// Scan JS/TS source for template literals whose content looks like markup.
+// Returns fragments of { start, masked }: `start` is the host-file offset of
+// the literal's content, `masked` its text with `${…}` holes blanked to
+// same-length whitespace — so every fragment offset IS a host offset.
+// String, template and comment contexts are tracked; regex literals are not
+// (a backtick inside a regex could mislead the scan — rare, and a mislead
+// degrades to "no fragment", never to wrong positions of what is found).
+function extractHtmlFragments(src) {
+  const fragments = [];
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === "'" || c === '"') { i = skipJsString(src, i); continue; }
+    if (c === '`') { i = readTemplate(src, i, fragments); continue; }
+    if (c === '/' && src[i + 1] === '/') {
+      const nl = src.indexOf('\n', i);
+      if (nl === -1) break;
+      i = nl + 1;
+      continue;
+    }
+    if (c === '/' && src[i + 1] === '*') {
+      const end = src.indexOf('*/', i + 2);
+      if (end === -1) break;
+      i = end + 2;
+      continue;
+    }
+    i++;
+  }
+  return fragments;
+}
+
 // --- rewrite machinery --------------------------------------------------------
 
 // Lex one opening tag starting at `start` (which must point at its `<`).
@@ -408,6 +522,7 @@ function parse(html) {
 module.exports = {
   parse,
   // Internal helpers, shared with cli.js; not part of the stable API.
+  extractHtmlFragments,
   lineIndex,
   offsetToPosition,
   lineTextAt,
