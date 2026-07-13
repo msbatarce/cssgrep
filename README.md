@@ -63,14 +63,15 @@ cat page.html | cssgrep <selector> # read from stdin
 
 Like `grep`, each matching line is printed on its own, once — however many
 matches sit on it. With `-n` there is one record *per match*, each with its
-own `line:col` locator (that per-match precision is the point of the tool). A
+own `line:col` locator (that per-match precision is the point of the tool),
+colon-separated from the text — byte-compatible with `rg --vimgrep`. A
 `file:` prefix is added when searching multiple files:
 
 ```
 {line contents}                         # default; stdin or single file
 {file}:{line contents}                  # default; multiple files
-{line}:{col} {line contents}            # -n; stdin or single file
-{file}:{line}:{col} {line contents}     # -n; multiple files
+{line}:{col}:{line contents}            # -n; stdin or single file
+{file}:{line}:{col}:{line contents}     # -n; multiple files
 ```
 
 ### Options
@@ -324,12 +325,13 @@ message pointing back to these recipes, rather than a bare "unknown option".
 
 ## Vim / Neovim integration
 
-The `file:line:col text` format produced by `-n` is `:grep`-compatible. Point
+The `file:line:col:text` format produced by `-n` is byte-compatible with
+`rg --vimgrep`, so the standard ripgrep `grepformat` works as-is. Point
 `grepprg` at `cssgrep -n -r` and hits land in the quickfix list:
 
 ```vim
 set grepprg=cssgrep\ -n\ -r
-set grepformat=%f:%l:%c\ %m
+set grepformat=%f:%l:%c:%m
 
 " :grep 'div.card' src/   then  :copen
 ```
