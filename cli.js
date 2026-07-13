@@ -39,11 +39,12 @@ Usage:
   cssgrep -e '[label=]<sel>' [-e ...] [file ...]
   cat file.html | cssgrep <selector>
 
-Output (each matching line once, like grep; with -n, one record per match):
+Output (each matching line once, like grep; with -n, one record per match,
+byte-compatible with rg --vimgrep):
   {line contents}                           (default; stdin or single file)
   {file}:{line contents}                    (default; multiple files)
-  {line}:{col} {line contents}              (with -n; stdin or single file)
-  {file}:{line}:{col} {line contents}       (with -n; multiple files)
+  {line}:{col}:{line contents}              (with -n; stdin or single file)
+  {file}:{line}:{col}:{line contents}       (with -n; multiple files)
 
 Options:
   -e, --selector <[label=]sel>   Add a selector (repeatable). Matches from all
@@ -647,7 +648,7 @@ function emitContext(src, starts, name, showLabel, targets, opts, out) {
       if (label) prefix += c(COLORS.file, label) + (opts.nul ? '\0' : sepColored);
       if (opts.lineNumber) {
         prefix += c(COLORS.line, String(L));
-        prefix += m ? c(COLORS.sep, ':') + c(COLORS.line, String(m.pos.bcol)) + ' '
+        prefix += m ? c(COLORS.sep, ':') + c(COLORS.line, String(m.pos.bcol)) + c(COLORS.sep, ':')
                     : c(COLORS.sep, '-');
       }
       const tag = m && m.selLabel != null ? c(COLORS.label, `[${m.selLabel}]`) + ' ' : '';
@@ -821,8 +822,8 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity, embedde
       text = renderText(pos, off, nodeEnd, opts);
     }
     // grep-style: a `file:` prefix appears with multiple files; the line:col
-    // locator only with -n. The locator is separated from the text by a space
-    // so the output stays :grep-compatible (grepformat %f:%l:%c %m).
+    // locator only with -n, colon-separated from the text — byte-compatible
+    // with `rg --vimgrep` (grepformat %f:%l:%c:%m).
     const sep = c(COLORS.sep, ':');
     // -0/--null: the char after the file name becomes NUL (grep -Z), for
     // unambiguous machine parsing (e.g. xargs -0).
@@ -830,7 +831,7 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity, embedde
     let prefix = '';
     if (label) prefix += c(COLORS.file, label) + fileSep;
     if (opts.lineNumber) {
-      prefix += c(COLORS.line, String(pos.line)) + sep + c(COLORS.line, String(pos.bcol)) + ' ';
+      prefix += c(COLORS.line, String(pos.line)) + sep + c(COLORS.line, String(pos.bcol)) + sep;
     }
     out.push(prefix + tag + text);
     emitted++;

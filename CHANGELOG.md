@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The `-n` locator is now colon-separated from the text —
+  `file:line:col:text` instead of `file:line:col text` — matching grep's
+  separator and making the output byte-compatible with `rg --vimgrep`. Vim
+  users can use the standard `grepformat=%f:%l:%c:%m` (docs updated); scripts
+  parsing the old space-separated form need the one-character change.
+
 ## [1.7.0] - 2026-07-12
 
 ### Added

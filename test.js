@@ -94,8 +94,8 @@ check('-n stdin: line:col format, no file prefix', () => {
   const lines = stdout.trimEnd().split('\n');
   assert.strictEqual(status, 0);
   assert.strictEqual(lines.length, 2);
-  assert.strictEqual(lines[0], '4:5     <div class="a">one</div>');
-  assert.strictEqual(lines[1], '6:5     <div class="a">three</div>');
+  assert.strictEqual(lines[0], '4:5:    <div class="a">one</div>');
+  assert.strictEqual(lines[1], '6:5:    <div class="a">three</div>');
 });
 
 check('single file: default has no file prefix', () => {
@@ -105,7 +105,7 @@ check('single file: default has no file prefix', () => {
 
 check('-n single file: no file prefix', () => {
   const { stdout } = run(['p#x', '-n', fMulti]);
-  assert.strictEqual(stdout.trimEnd(), '5:5     <p id="x">two</p>');
+  assert.strictEqual(stdout.trimEnd(), '5:5:    <p id="x">two</p>');
 });
 
 check('default mode prints a matching line once, like grep (minified)', () => {
@@ -119,15 +119,15 @@ check('-n minified single line: distinct columns on line 1', () => {
   const { stdout } = run(['.hit', '-n'], { input: minified });
   const lines = stdout.trimEnd().split('\n');
   assert.strictEqual(lines.length, 2);
-  assert.strictEqual(lines[0].split(' ')[0], '1:6');
-  assert.strictEqual(lines[1].split(' ')[0], '1:32');
+  assert.ok(lines[0].startsWith('1:6:<div>'), lines[0]);
+  assert.ok(lines[1].startsWith('1:32:<div>'), lines[1]);
 });
 
 check('-n CRLF: trailing \\r stripped from shown line', () => {
   const { stdout } = run(['li', '-n'], { input: crlf });
   const lines = stdout.trimEnd().split('\n');
-  assert.strictEqual(lines[0], '2:1 <li>one</li>');
-  assert.strictEqual(lines[1], '3:1 <li>two</li>');
+  assert.strictEqual(lines[0], '2:1:<li>one</li>');
+  assert.strictEqual(lines[1], '3:1:<li>two</li>');
 });
 
 check('multiple files: default shows file: prefix, no locator', () => {
@@ -141,7 +141,7 @@ check('-n multiple files: file:line:col prefix appears', () => {
   const { stdout } = run(['p#x', '-n', fMulti, fNested]);
   const lines = stdout.trimEnd().split('\n');
   assert.ok(lines.every(l => l.startsWith(fMulti + ':') || l.startsWith(fNested + ':')), stdout);
-  assert.ok(lines.includes(`${fMulti}:5:5     <p id="x">two</p>`), stdout);
+  assert.ok(lines.includes(`${fMulti}:5:5:    <p id="x">two</p>`), stdout);
 });
 
 check('-n recursive: walks into subdirectories', () => {
@@ -217,8 +217,7 @@ check('--max-width truncates with ellipsis', () => {
 
 check('-n with -w: locator excluded from the width budget', () => {
   const { stdout } = run(['span.hit', '-n', '-w', '12'], { input: minified });
-  const first = stdout.split('\n')[0];
-  const shown = first.slice(first.indexOf(' ') + 1);
+  const shown = /^\d+:\d+:(.*)$/.exec(stdout.split('\n')[0])[1];
   assert.strictEqual(shown.length, 12);
   assert.ok(shown.endsWith('…'), shown);
 });
@@ -347,7 +346,7 @@ check('--attr=href inline value form', () => {
 
 check('--attr honors -n locator', () => {
   const { stdout } = run(['a', '--attr', 'href', '-n'], { input: links });
-  assert.strictEqual(stdout.trimEnd().split('\n')[0], '1:1 /one');
+  assert.strictEqual(stdout.trimEnd().split('\n')[0], '1:1:/one');
 });
 
 check('--text prints collapsed text content', () => {
@@ -407,7 +406,7 @@ check('-l -0 NUL-terminates file names, no newlines', () => {
 check('-0 line output uses NUL after the file name, keeps newlines', () => {
   const { stdout } = run(['p#x', '-n', '-0', fMulti, fNested]);
   const first = stdout.split('\n')[0];
-  assert.strictEqual(first, `${fMulti}\x005:5     <p id="x">two</p>`);
+  assert.strictEqual(first, `${fMulti}\x005:5:    <p id="x">two</p>`);
 });
 
 check('-0 count output uses NUL after the file name', () => {
@@ -480,7 +479,7 @@ check('--parent -p without color emits no escapes (and no sentinels)', () => {
 check('--parent in line mode reports the ancestor position', () => {
   const multilineNested = '<section>\n  <article>\n    <p class="x">body</p>\n  </article>\n</section>\n';
   const { stdout } = run(['p.x', '-n', '--parent', '1'], { input: multilineNested });
-  assert.strictEqual(stdout.split('\n')[0].split(' ')[0], '2:3');  // <article> at line 2 col 3
+  assert.strictEqual(stdout.split('\n')[0].split(':').slice(0, 2).join(':'), '2:3');  // <article> at line 2 col 3
 });
 
 // --- context (-A / -B / -C) -------------------------------------------------
@@ -491,11 +490,11 @@ check('-C1 prints before/after with `--` between non-contiguous groups', () => {
   const { stdout } = run(['.m', '-C1', '-n'], { input: ctxDoc });
   assert.deepStrictEqual(stdout.trimEnd().split('\n'), [
     '1-<a>1</a>',
-    '2:1 <b class="m">2</b>',
+    '2:1:<b class="m">2</b>',
     '3-<c>3</c>',
     '--',
     '5-<e>5</e>',
-    '6:1 <f class="m">6</f>',
+    '6:1:<f class="m">6</f>',
     '7-<g>7</g>',
   ]);
 });
@@ -503,7 +502,7 @@ check('-C1 prints before/after with `--` between non-contiguous groups', () => {
 check('-A1 prints only following lines', () => {
   const { stdout } = run(['.m', '-A1', '-n'], { input: '<b class="m">1</b>\n<c>2</c>\n' });
   const lines = stdout.trimEnd().split('\n');
-  assert.strictEqual(lines[0], '1:1 <b class="m">1</b>');
+  assert.strictEqual(lines[0], '1:1:<b class="m">1</b>');
   assert.strictEqual(lines[1], '2-<c>2</c>');
 });
 
@@ -511,7 +510,7 @@ check('-B1 prints only preceding lines', () => {
   const { stdout } = run(['.m', '-B1', '-n'], { input: '<a>0</a>\n<b class="m">1</b>\n' });
   const lines = stdout.trimEnd().split('\n');
   assert.strictEqual(lines[0], '1-<a>0</a>');
-  assert.strictEqual(lines[1], '2:1 <b class="m">1</b>');
+  assert.strictEqual(lines[1], '2:1:<b class="m">1</b>');
 });
 
 check('context windows merge for nearby matches (no separator)', () => {
@@ -523,12 +522,12 @@ check('context windows merge for nearby matches (no separator)', () => {
 
 check('-B clamps at the start of the file', () => {
   const { stdout } = run(['.m', '-B2', '-n'], { input: '<b class="m">x</b>\n<c>y</c>\n' });
-  assert.strictEqual(stdout.trimEnd().split('\n')[0], '1:1 <b class="m">x</b>');
+  assert.strictEqual(stdout.trimEnd().split('\n')[0], '1:1:<b class="m">x</b>');
 });
 
 check('-C2 attached value form', () => {
   const { stdout } = run(['.m', '-C2', '-n'], { input: ctxDoc });
-  assert.ok(stdout.includes('2:1 <b class="m">2</b>'), stdout);
+  assert.ok(stdout.includes('2:1:<b class="m">2</b>'), stdout);
 });
 
 check('context with an aggregate (-c): exit status 2', () => {
@@ -588,7 +587,7 @@ check('--color=always -n: colors filename, line:col and match', () => {
   assert.ok(first.includes(`\x1b[35m${fMulti}\x1b[0m`), 'filename in file color');
   assert.ok(first.includes('\x1b[32m5\x1b[0m'), 'line number in line color');
   assert.ok(first.includes('\x1b[1;31m'), 'match color present');
-  assert.strictEqual(stripAnsi(first), `${fMulti}:5:5     <p id="x">two</p>`);
+  assert.strictEqual(stripAnsi(first), `${fMulti}:5:5:    <p id="x">two</p>`);
 });
 
 check('--color=always -w: width preserved, ellipsis left uncolored', () => {
@@ -729,27 +728,27 @@ check('--max-width=12 long =value form', () => {
 
 check('-rn clusters -r and -n', () => {
   const stdout = execFileSync('node', [CLI, 'div.a', '-rn'], { cwd: tmp, encoding: 'utf8' });
-  assert.ok(/(^|\n)multi\.html:4:5 /.test(stdout), stdout);
+  assert.ok(/(^|\n)multi\.html:4:5:/.test(stdout), stdout);
 });
 
 check('-rnw15 clusters flags with a trailing attached value', () => {
   const stdout = execFileSync('node', [CLI, 'div.a', '-rnw15'], { cwd: tmp, encoding: 'utf8' });
   const line = stdout.split('\n').find(l => /multi\.html/.test(l));
-  assert.ok(/multi\.html:4:5 /.test(line), line);           // -n locator present
-  const shown = line.slice(line.indexOf(' ') + 1);
+  assert.ok(/multi\.html:4:5:/.test(line), line);           // -n locator present
+  const shown = /^.*?:\d+:\d+:(.*)$/.exec(line)[1];
   assert.strictEqual(shown.length, 15);                     // -w15 truncation applied
 });
 
 check('-rnw 15 takes the value from the next argument', () => {
   const stdout = execFileSync('node', [CLI, 'div.a', '-rnw', '15'], { cwd: tmp, encoding: 'utf8' });
   const line = stdout.split('\n').find(l => /multi\.html/.test(l));
-  assert.strictEqual(line.slice(line.indexOf(' ') + 1).length, 15);
+  assert.strictEqual(/^.*?:\d+:\d+:(.*)$/.exec(line)[1].length, 15);
 });
 
 check('--ext=htm (long =value) selects .htm under -r', () => {
   // page.htm is the only .htm match, so it prints as a single file (no prefix).
   const stdout = execFileSync('node', [CLI, 'p', '-rn', '--ext=htm'], { cwd: tmp, encoding: 'utf8' });
-  assert.strictEqual(stdout.trimEnd(), '1:1 <p>htm</p>');
+  assert.strictEqual(stdout.trimEnd(), '1:1:<p>htm</p>');
   assert.ok(!/multi\.html/.test(stdout), 'html files excluded by --ext=htm');
 });
 
@@ -889,13 +888,13 @@ check('**/ glob stops at segment boundaries', () => {
 check('-n columns count bytes, not code units (vim %c)', () => {
   // 'ééé' is 3 chars / 6 UTF-8 bytes: <span starts at byte 9 → col 10.
   const { stdout } = run(['#t', '-n'], { input: '<p>ééé<span id=t>x</span></p>' });
-  assert.strictEqual(stdout.trimEnd().split(' ')[0], '1:10');
+  assert.strictEqual(stdout.trimEnd().split(':').slice(0, 2).join(':'), '1:10');
 });
 
 check('-n columns: astral chars count their UTF-8 bytes', () => {
   // '😀' is 4 UTF-8 bytes (2 code units): <span starts at byte 7 → col 8.
   const { stdout } = run(['#t', '-n'], { input: '<p>😀<span id=t>x</span></p>' });
-  assert.strictEqual(stdout.trimEnd().split(' ')[0], '1:8');
+  assert.strictEqual(stdout.trimEnd().split(':').slice(0, 2).join(':'), '1:8');
 });
 
 check('--json col counts bytes too', () => {
@@ -987,8 +986,8 @@ check('-e: matches merge in document order, tagged [label]', () => {
   const { stdout } = run(['-n', '-e', 'title=h1', '-e', 'price=.card .price'], { input: multiSel });
   const lines = stdout.trimEnd().split('\n');
   assert.strictEqual(lines.length, 2);
-  assert.ok(lines[0].startsWith('1:13 [title] '), lines[0]);
-  assert.ok(lines[1].startsWith('1:46 [price] '), lines[1]);
+  assert.ok(lines[0].startsWith('1:13:[title] '), lines[0]);
+  assert.ok(lines[1].startsWith('1:46:[price] '), lines[1]);
 });
 
 check('-e: an unlabeled selector is tagged with its own text', () => {
@@ -1301,7 +1300,7 @@ check('embedded: matches inside template literals get host-file locators', () =>
   const { stdout, status } = run(['.card', '-n', fEmb]);
   assert.strictEqual(status, 0);
   // line 3; `const t = html\`` is 15 chars, so the < of <div> sits at col 16
-  assert.ok(stdout.startsWith('3:16 '), stdout);
+  assert.ok(stdout.startsWith('3:16:'), stdout);
 });
 
 check('embedded: a ${hole} in an attribute still matches; output shows the original', () => {
@@ -1311,14 +1310,14 @@ check('embedded: a ${hole} in an attribute still matches; output shows the origi
 
 check('embedded: nested template literals contribute their own fragments', () => {
   const { stdout } = run(['i.in', '-n', fEmb]);
-  assert.ok(stdout.startsWith('5:37 '), stdout);
+  assert.ok(stdout.startsWith('5:37:'), stdout);
 });
 
 check('embedded: an unclosed tag in one literal never adopts the next literal', () => {
   const { status } = run(['p .y, p em', fEmb], { expectStatus: 1 });
   assert.strictEqual(status, 1);
   const { stdout } = run(['.y', '-n', fEmb]);
-  assert.ok(stdout.startsWith('7:21 '), stdout);
+  assert.ok(stdout.startsWith('7:21:'), stdout);
 });
 
 check('embedded: non-markup literals, strings and comments contribute nothing', () => {
