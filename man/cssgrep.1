@@ -1,6 +1,6 @@
 .\" Man page for cssgrep. Keep the OPTIONS section in sync with the USAGE
 .\" string in cli.js.
-.TH CSSGREP 1 "2026-07-07" "cssgrep 1.4.0" "User Commands"
+.TH CSSGREP 1 "2026-07-12" "cssgrep 1.5.0" "User Commands"
 .SH NAME
 cssgrep \- search HTML by CSS selector, grep-style
 .SH SYNOPSIS
@@ -159,11 +159,13 @@ Print the matched node's text content, whitespace collapsed.
 .TP
 .B \-\-json
 Print one JSON object per match (NDJSON) with
-.IR file ", " line ", " col ", " html ", " text
+.IR file ", " line ", " col ", " attribs ", " html ", " text
 (plus
 .I label
 with
 .BR \-e ).
+.I attribs
+is the element's attribute object, names lowercased by the parser.
 .TP
 .BI \-\-parent " n"
 Report the
