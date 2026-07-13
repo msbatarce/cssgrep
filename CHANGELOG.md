@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-07-12
+
 ### Added
 - Embedded HTML in JS/TS: files with `.js`/`.mjs`/`.cjs`/`.jsx`/`.ts`/`.mts`/
   `.cts`/`.tsx` extensions are searched for HTML inside template literals
@@ -142,7 +144,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `-0`/`--null`, `--color`, `-w`/`--max-width`, `-V`/`--version`.
 - Standalone binaries (Bun, Node SEA), shell completions, and a man page.
 
-[Unreleased]: https://github.com/msbatarce/cssgrep/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/msbatarce/cssgrep/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/msbatarce/cssgrep/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/msbatarce/cssgrep/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/msbatarce/cssgrep/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/msbatarce/cssgrep/compare/v1.2.0...v1.3.0
