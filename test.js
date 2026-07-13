@@ -1268,6 +1268,67 @@ check('--watch validation: -q, rewrite ops, stdin, --no-clear misuse rejected', 
   }
 });
 
+// --- embedded HTML in JS/TS (template literals) ---------------------------------
+const embJs = [
+  '// backtick ` in a comment is noise',
+  "const s = 'not ` a template';",
+  'const t = html`<div class="${cls} card"><a href="/x">go</a></div>`;',
+  'const g = `hello ${name}`;',
+  'const u = html`<b>${x.map(v => html`<i class="in">${v}</i>`)}</b>`;',
+  'const open = html`<p>`;',
+  'const closed = html`<em class="y">z</em>`;',
+].join('\n') + '\n';
+const fEmb = path.join(tmp, 'card.js');
+fs.writeFileSync(fEmb, embJs);
+
+check('embedded: matches inside template literals get host-file locators', () => {
+  const { stdout, status } = run(['.card', '-n', fEmb]);
+  assert.strictEqual(status, 0);
+  // line 3; `const t = html\`` is 15 chars, so the < of <div> sits at col 16
+  assert.ok(stdout.startsWith('3:16 '), stdout);
+});
+
+check('embedded: a ${hole} in an attribute still matches; output shows the original', () => {
+  const { stdout } = run(['.card', fEmb]);
+  assert.ok(stdout.includes('${cls} card'), 'interpolation text visible in the printed line');
+});
+
+check('embedded: nested template literals contribute their own fragments', () => {
+  const { stdout } = run(['i.in', '-n', fEmb]);
+  assert.ok(stdout.startsWith('5:37 '), stdout);
+});
+
+check('embedded: an unclosed tag in one literal never adopts the next literal', () => {
+  const { status } = run(['p .y, p em', fEmb], { expectStatus: 1 });
+  assert.strictEqual(status, 1);
+  const { stdout } = run(['.y', '-n', fEmb]);
+  assert.ok(stdout.startsWith('7:21 '), stdout);
+});
+
+check('embedded: non-markup literals, strings and comments contribute nothing', () => {
+  // `hello ${name}` and the quoted/commented backticks must not become
+  // fragments; only the four markup literals exist, so body counts them.
+  const { stdout } = run(['div, a, b, i, p, em', '-c', fEmb]);
+  assert.strictEqual(stdout.trimEnd(), '6');
+});
+
+check('embedded: --json carries the original source slice, holes visible', () => {
+  const rec = JSON.parse(run(['.card a', '--json', fEmb]).stdout.trim());
+  assert.strictEqual(rec.html, '<a href="/x">go</a>');
+  assert.strictEqual(rec.line, 3);
+  const card = JSON.parse(run(['.card', '--json', fEmb]).stdout.trim());
+  assert.ok(card.html.includes('${cls}'), 'hole text preserved in html field');
+});
+
+check('embedded: -r --ext js discovers matches in a tree', () => {
+  const dir = path.join(tmp, 'embtree');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'a.js'), 'export const x = html`<div class="hit">1</div>`;\n');
+  fs.writeFileSync(path.join(dir, 'b.html'), '<div class="hit">2</div>\n');
+  const { stdout } = run(['.hit', '-r', '--ext', 'js,html', '-l', dir]);
+  assert.strictEqual(stdout.trimEnd().split('\n').length, 2);
+});
+
 // --- teardown ---------------------------------------------------------------
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(failures ? `\n${failures} test(s) failed` : '\nall tests passed');

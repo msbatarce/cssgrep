@@ -6,8 +6,8 @@ grep-family flags plus HTML-specific capabilities plain grep can't offer.
 **Process:** implement in phase order. **Each feature is its own commit** (code +
 tests + docs, suite green) — see `CLAUDE.md`. Phases are independently shippable.
 
-**Status: Phases 0–11 are done (7 resolved as "no flag" — see below); Phases
-12–13 are planned (v1.6+), with design decisions open.** Phases 0–4 shipped:
+**Status: Phases 0–12 are done (7 resolved as "no flag" — see below); Phase
+13 (highlighted `-p`) is planned.** Phases 0–4 shipped:
 `-m`, `-l`/`-L`/`-q`, `--attr`/`--text`, `--json`, `-0`/`--null`, `--parent`,
 and `-A`/`-B`/`-C`. This file is kept as the design record; future work can
 extend it.
@@ -468,7 +468,7 @@ startup-latency item can be pulled forward at will.
 
 ---
 
-## Phase 12 — Embedded HTML in host files
+## Phase 12 — Embedded HTML in host files — implemented 2026-07-12
 
 The novel capability round: find HTML that lives *inside* another language's
 source — above all JS/TS template literals (lit-html, vanilla `` `<div>…` ``
@@ -506,14 +506,20 @@ Scope notes:
   work *today* via forgiving parsing + `--ext php,erb` — add documented
   recipes and pinning tests rather than machinery.
 
-**Design questions:**
-- Activation: automatic by file extension (`.js`, `.mjs`, `.cjs`, `.ts`,
-  `.mts`, `.tsx`…) so `cssgrep '.card' app.js` just works (with `-r` still
-  requiring `--ext js,…` to reach those files), or an explicit `--embedded`
-  flag?
-- Which literals qualify: any template literal whose masked content sniffs as
-  markup (`<letter`), only tagged `` html`…` `` literals, or also ordinary
-  `'…'`/`"…"` strings (escape sequences make those messier)?
+**Decisions (2026-07-12):**
+- **Activation: automatic by extension** (`.js .mjs .cjs .jsx .ts .mts .cts
+  .tsx`) — `cssgrep '.card' app.js` just works; under `-r` the default `--ext
+  html,htm` is unchanged, so recursive scans reach JS/TS only via `--ext
+  js,…`. No new flag. Stdin is never treated as embedded (no extension to go
+  by).
+- **Qualification: any template literal whose *masked* content sniffs as
+  markup** (`<` followed by a letter or `!`). Catches tagged and untagged
+  literals; `` `hello ${name}` `` and `` `<${Tag}>` `` don't qualify.
+  Ordinary `'…'`/`"…"` strings stay out (escape sequences corrupt attribute
+  bytes) — recorded as a possible later extension.
+- Known lexer limitation, documented in code: regex literals aren't tracked
+  (a backtick inside a regex could mislead the scan); a mislead degrades to
+  "fragment not found", never to wrong positions of what is found.
 
 ## Phase 13 — Syntax-highlighted `-p`
 

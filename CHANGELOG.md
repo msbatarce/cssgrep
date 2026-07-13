@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Embedded HTML in JS/TS: files with `.js`/`.mjs`/`.cjs`/`.jsx`/`.ts`/`.mts`/
+  `.cts`/`.tsx` extensions are searched for HTML inside template literals
+  (tagged or not), with locators pointing into the host file — quickfix jumps
+  straight to the match inside `` html`…` ``. `${…}` holes match as
+  whitespace but display as the original source; each literal parses
+  independently, so an unclosed tag in one can't leak into the next. Under
+  `-r`, opt in with `--ext js,ts`. JSX is not extracted (it isn't HTML).
+
 ## [1.5.0] - 2026-07-12
 
 ### Added

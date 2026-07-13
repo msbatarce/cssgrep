@@ -204,6 +204,38 @@ globally to every selector. With `-e`, positional arguments are always file
 paths — like `grep -e`, a mistyped path is reported as unreadable rather than
 re-guessed as a selector.
 
+### Embedded HTML in JS/TS
+
+Modern HTML often lives inside JavaScript. Files with JS/TS extensions
+(`.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.mts`, `.cts`, `.tsx`) are
+automatically searched for HTML inside **template literals** — lit-html's
+`` html`…` ``, vanilla `` el.innerHTML = `…` ``, nested templates — and
+matches report **host-file locators** that vim's quickfix jumps straight to:
+
+```sh
+$ cssgrep '.price' -n components/card.js
+41:23     <span class="price">${item.price}</span>
+
+$ cssgrep 'img:not([alt])' -rn --ext js,ts,html src/   # audit across both worlds
+```
+
+How it works: every backtick literal whose content looks like markup (`<` +
+letter) is parsed as its own document, with each `${…}` interpolation masked
+to same-length whitespace — so offsets in the fragment *are* offsets in the
+host file, and no position math can drift. Because fragments parse
+independently, an unclosed tag in one literal can never swallow the next.
+Printed lines and `--json`'s `html` field show the *original* source
+(interpolations visible); selector matching, `attribs` and `--text` see holes
+as whitespace, so `class="${cls} card"` matches `.card`, and a tag name
+that's a hole (`<${Tag}>`) never matches. JSX is not extracted — it isn't
+HTML.
+
+With `-r`, JS/TS files are reached by adding their extensions (`--ext
+js,ts`); the default stays `html,htm`. Server-side template files (PHP, ERB,
+Handlebars…) usually need none of this — they're HTML with interruptions, and
+forgiving parsing handles them: `cssgrep '.card' -r --ext php,erb .`. The
+rewrite ops don't apply inside JS/TS files.
+
 ### Watch mode (`--watch`)
 
 `--watch` keeps the search running and re-runs it whenever a watched file

@@ -271,6 +271,28 @@ Globs for
 support
 .BR * " (within a path segment), " ** " (across " / ),
 .BR ? " (one non-slash char), and brace alternation like " *.{html,htm} .
+.SH EMBEDDED HTML
+Files with JS/TS extensions
+.RB ( .js ", " .mjs ", " .cjs ", " .jsx ", " .ts ", " .mts ", " .cts ", " .tsx )
+are searched for HTML inside template literals: every backtick literal whose
+content looks like markup is parsed as its own document, and each
+.RI \(dq${ expr }\(dq
+interpolation is masked to same-length whitespace, so match locators point
+directly into the host file. Printed lines and
+.BR \-\-json 's
+.I html
+field show the original source with interpolations visible; selector
+matching sees holes as whitespace (so
+.I class=\(dq${cls} card\(dq
+matches
+.IR .card ).
+Fragments parse independently \(em an unclosed tag in one literal never
+swallows the next. With
+.BR \-r ,
+add the extensions via
+.BR "\-\-ext js,ts" .
+JSX is not extracted (it is not HTML), and the rewrite operations treat these
+files as plain HTML.
 .SH WATCH MODE
 .TP
 .B \-\-watch

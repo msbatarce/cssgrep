@@ -4,8 +4,14 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  parse, offsetToPosition, lineTextAt, textOf, collapseWs, ancestor,
+  parse, extractHtmlFragments, lineIndex, offsetToPosition, lineTextAt,
+  textOf, collapseWs, ancestor,
 } = require('./lib.js');
+
+// Files with these extensions are scanned for HTML inside JS/TS template
+// literals instead of being parsed as one HTML document (ROADMAP Phase 12).
+const EMBEDDED_EXTS = new Set(['js', 'mjs', 'cjs', 'jsx', 'ts', 'mts', 'cts', 'tsx']);
+const isEmbeddedPath = p => EMBEDDED_EXTS.has(path.extname(p).slice(1).toLowerCase());
 
 // dom-serializer + js-beautify are only needed by -p, and cost ~13 ms of a
 // ~43 ms startup (measured, ROADMAP Phase 11) — loaded on first use so the
@@ -108,6 +114,11 @@ value with = or as the next word (--max-width=100, --ext htm).
 
 Globs (--include/--ignore/--exclude) support *, ** (crosses /), ?, and brace
 alternation like *.{html,htm}.
+
+JS/TS files (.js .mjs .cjs .jsx .ts .mts .cts .tsx) are searched for HTML
+inside template literals: each markup-looking \`...\` is parsed on its own,
+\${...} holes match as whitespace, and locators point into the host file
+(with -r, add the extensions via --ext js,ts). Rewrite ops don't apply there.
 
 Exit status: 0 if any match was found, 1 if none, 2 on error.`;
 
@@ -541,11 +552,11 @@ function emitContext(src, starts, name, showLabel, targets, opts, out) {
   // which drives the in-line highlight — and the [label] tag — when emitting.
   const info = new Map();
   const posState = {};
-  for (const { el, label: selLabel } of targets) {
-    const off = el.startIndex == null ? 0 : el.startIndex;
+  for (const { el, base, label: selLabel } of targets) {
+    const off = base + (el.startIndex == null ? 0 : el.startIndex);
     const pos = offsetToPosition(starts, src, off, posState);
     if (info.has(pos.line)) continue;
-    const nodeEnd = (el.endIndex == null ? off : el.endIndex) + 1;
+    const nodeEnd = base + (el.endIndex == null ? off - base : el.endIndex) + 1;
     info.set(pos.line, { off, nodeEnd, pos, selLabel });
   }
 
@@ -585,13 +596,20 @@ function emitContext(src, starts, name, showLabel, targets, opts, out) {
 // `name` is the source's display name (file path, or "(standard input)"); it is
 // used by the aggregate modes (-l/-L/-c). `showLabel` decides whether per-match
 // lines carry a `file:` prefix (only when more than one file is searched).
-function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
+function searchSource(src, name, showLabel, opts, out, limit = Infinity, embedded = false) {
   // The lib owns parsing and selection: one parse per source, then one
   // doc.search() per selector against the same tree. The CLI works on the
   // raw nodes (the match objects' documented escape hatch) because its
   // output modes need node-level access the match shape doesn't model
   // (pretty-printing, ancestor re-targeting, in-line highlight spans).
-  const doc = parse(src);
+  //
+  // A plain HTML file is one fragment covering the whole source (base 0).
+  // An embedded (JS/TS) file contributes one fragment per markup-sniffing
+  // template literal — holes masked to same-length whitespace, so fragment
+  // offsets + base ARE host-file offsets — each parsed as its own document,
+  // so an unclosed tag in one literal can never swallow the next.
+  const docs = (embedded ? extractHtmlFragments(src) : [{ start: 0, masked: src }])
+    .map(f => ({ doc: parse(f.masked), base: f.start }));
   // One record per (selector, matched node): with -e a node matched by two
   // selectors is reported once per selector, tagged with each label, and the
   // merged stream is in document order (same node = same offset, so the
@@ -603,10 +621,12 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     : [{ label: null, selector: opts.selector }];
   const records = [];
   for (const s of selList) {
-    for (const m of doc.search(s.selector)) records.push({ el: m.node, label: s.label });
+    for (const { doc, base } of docs) {
+      for (const m of doc.search(s.selector)) records.push({ el: m.node, base, label: s.label });
+    }
   }
-  if (selList.length > 1) {
-    records.sort((a, b) => (a.el.startIndex || 0) - (b.el.startIndex || 0));
+  if (selList.length > 1 || docs.length > 1) {
+    records.sort((a, b) => (a.base + (a.el.startIndex || 0)) - (b.base + (b.el.startIndex || 0)));
   }
   const found = records.length;
   // Aggregate modes suppress per-match output entirely.
@@ -630,11 +650,15 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
   // Nothing to emit: return before building the line index — a zero-match
   // pass over a large file shouldn't pay a full line scan for nothing.
   if (limited.length === 0) return 0;
-  const starts = opts.print ? null : doc.lineStarts();
-  // --parent re-targets matches to ancestors (no-op without it). Dedup is per
-  // (ancestor, label), so two -e selectors sharing a container still report it
-  // once each. Aggregate modes above operate on the raw matches; targeting
-  // only affects what prints.
+  // Positions are host-file positions: fragments preserve line structure, so
+  // the host source's own line index serves embedded matches directly.
+  const starts = opts.print ? null
+    : embedded ? lineIndex(src)
+    : docs[0].doc.lineStarts();
+  // --parent re-targets matches to ancestors (no-op without it; never leaves
+  // the match's own fragment). Dedup is per (ancestor, label), so two -e
+  // selectors sharing a container still report it once each. Aggregate modes
+  // above operate on the raw matches; targeting only affects what prints.
   let targets = limited;
   if (opts.parent) {
     targets = [];
@@ -645,7 +669,7 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
       if (!labels) { labels = new Set(); seen.set(a, labels); }
       if (!labels.has(r.label)) {
         labels.add(r.label);
-        targets.push({ el: a, label: r.label });
+        targets.push({ el: a, base: r.base, label: r.label });
       }
     }
   }
@@ -674,10 +698,10 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
     // by JSON.stringify, so each record stays on one line. Ignores --color
     // and -n (line/col are always present). `label` appears only with -e.
     const posState = {};
-    for (const { el, label: selLabel } of targets) {
-      const off = el.startIndex == null ? 0 : el.startIndex;
+    for (const { el, base, label: selLabel } of targets) {
+      const off = base + (el.startIndex == null ? 0 : el.startIndex);
       const pos = offsetToPosition(starts, src, off, posState);
-      const nodeEnd = (el.endIndex == null ? off : el.endIndex) + 1;
+      const nodeEnd = base + (el.endIndex == null ? off - base : el.endIndex) + 1;
       out.push(JSON.stringify({
         file: name,
         line: pos.line,
@@ -697,7 +721,7 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
   // Extraction modes print per-match values, so they never dedup.
   const seenLines = (opts.lineNumber || opts.attr != null || opts.text) ? null : new Set();
   const posState = {};
-  for (const { el, label: selLabel } of targets) {
+  for (const { el, base, label: selLabel } of targets) {
     const c = opts.colorOn ? paint : (_, s) => s;
     // The [label] tag from -e; a null label (positional selector) prints none.
     const tag = selLabel === null ? '' : c(COLORS.label, `[${selLabel}]`) + ' ';
@@ -710,7 +734,7 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
       emitted++;
       continue;
     }
-    const off = el.startIndex == null ? 0 : el.startIndex;
+    const off = base + (el.startIndex == null ? 0 : el.startIndex);
     const pos = offsetToPosition(starts, src, off, posState);
 
     // Choose the content printed for this match. --attr/--text replace the
@@ -727,7 +751,7 @@ function searchSource(src, name, showLabel, opts, out, limit = Infinity) {
         if (seenLines.has(pos.line)) continue;    // this line already printed
         seenLines.add(pos.line);
       }
-      const nodeEnd = (el.endIndex == null ? off : el.endIndex) + 1; // exclusive
+      const nodeEnd = base + (el.endIndex == null ? off - base : el.endIndex) + 1; // exclusive
       text = renderText(pos, off, nodeEnd, opts);
     }
     // grep-style: a `file:` prefix appears with multiple files; the line:col
@@ -1196,7 +1220,7 @@ function searchFiles(opts, files, out) {
       }
       continue;
     }
-    total += searchSource(buf.toString('utf8'), f, showLabel, opts, out, room());
+    total += searchSource(buf.toString('utf8'), f, showLabel, opts, out, room(), isEmbeddedPath(f));
     if (opts.quiet && total > 0) break;   // -q: first match decides the status
   }
   return total;
