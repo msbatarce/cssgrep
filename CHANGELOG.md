@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-12
+
+### Added
+- `-p` output is syntax-highlighted when color is on: tag names, attribute
+  names, attribute values and comments each get a color, and with
+  `--parent -p` the matched node's region stays wrapped in unbroken match
+  red on top of it. `--color=never` (or piping) keeps the plain output.
+
 ## [1.6.0] - 2026-07-12
 
 ### Added
@@ -144,7 +152,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `-0`/`--null`, `--color`, `-w`/`--max-width`, `-V`/`--version`.
 - Standalone binaries (Bun, Node SEA), shell completions, and a man page.
 
-[Unreleased]: https://github.com/msbatarce/cssgrep/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/msbatarce/cssgrep/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/msbatarce/cssgrep/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/msbatarce/cssgrep/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/msbatarce/cssgrep/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/msbatarce/cssgrep/compare/v1.3.0...v1.4.0

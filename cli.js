@@ -4,8 +4,8 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  parse, extractHtmlFragments, lineIndex, offsetToPosition, lineTextAt,
-  textOf, collapseWs, ancestor,
+  parse, extractHtmlFragments, lexOpenTag, lineIndex, offsetToPosition,
+  lineTextAt, textOf, collapseWs, ancestor,
 } = require('./lib.js');
 
 // Files with these extensions are scanned for HTML inside JS/TS template
@@ -29,7 +29,7 @@ function loadPrettyPrinter() {
 // package.json, so it survives compilation into a standalone binary (Bun
 // --compile / Node SEA), where package.json won't sit next to the executable.
 // Keep in sync with package.json on release.
-const VERSION = '1.6.0';
+const VERSION = '1.7.0';
 
 const USAGE = `cssgrep - search HTML by CSS selector, grep-style.
 
@@ -60,7 +60,8 @@ Options:
   -S, --follow           Follow symbolic links when recursing with -r
                          (default: skip them; loops are detected).
   -n, --line-number      Prefix each match with its line:col (excludes -c, -p).
-  -p, --print            Pretty-print the matched node's HTML above its location.
+  -p, --print            Pretty-print the matched node's HTML, syntax-
+                         highlighted when color is on.
       --attr <name>      Print the value of attribute <name> (skips nodes without it).
       --text             Print the matched node's text content (whitespace collapsed).
       --json             Print one JSON record per match (NDJSON: file,line,col,
@@ -137,12 +138,19 @@ function failInvert(flag) {
 // ANSI SGR codes matching grep's default scheme: bold-red match, magenta
 // filename, green line/col numbers, cyan separators. The [label] tag from -e
 // has no grep counterpart; yellow keeps it distinct from all of the above.
+// The last four paint -p's syntax highlighting (tag names, attribute names,
+// attribute values, comments/doctypes) — distinct from match red, which
+// always wins inside a --parent -p match region.
 const COLORS = {
   match: '1;31',
   file: '35',
   line: '32',
   sep: '36',
   label: '33',
+  tag: '1;34',
+  attr: '36',
+  value: '32',
+  comment: '90',
 };
 
 function paint(code, str) {
@@ -386,9 +394,8 @@ function parseArgs(argv) {
     fail(`invalid --color value: ${opts.color} (expected auto, always or never)`);
   }
   // Resolve the tri-state into a single boolean: color only when forced on, or
-  // 'auto' and stdout is an interactive terminal. Plain -p still prints no
-  // color (it has nothing to highlight) — that's gated where it prints, not
-  // here, so --parent -p can highlight the matched node inside the container.
+  // 'auto' and stdout is an interactive terminal. -p uses it for syntax
+  // highlighting (and --parent -p for the match region on top of it).
   opts.colorOn = opts.color === 'always' || (opts.color === 'auto' && Boolean(process.stdout.isTTY));
   return opts;
 }
@@ -467,14 +474,63 @@ function renderText(pos, off, nodeEnd, opts) {
 const HL_START = '';
 const HL_END = '';
 
+// Syntax-highlight a pretty-printed HTML block: tag names, attribute names,
+// attribute values (quotes included) and comments/doctypes get their own
+// colors; text content and punctuation stay unpainted. Spans come from the
+// same opening-tag lexer the rewrite mode uses, so a quoted '>' never
+// confuses the scan.
+function highlightHtml(s) {
+  let out = '';
+  let i = 0;
+  while (i < s.length) {
+    const ch = s[i];
+    if (ch === '<' && (s.startsWith('<!--', i) || s[i + 1] === '!')) {
+      const close = s.startsWith('<!--', i) ? '-->' : '>';
+      let end = s.indexOf(close, i + 2);
+      end = end === -1 ? s.length : end + close.length;
+      out += paint(COLORS.comment, s.slice(i, end));
+      i = end;
+      continue;
+    }
+    if (ch === '<' && s[i + 1] === '/') {
+      const m = /^<\/([^\s>]*)([^>]*>?)/.exec(s.slice(i));
+      out += '</' + paint(COLORS.tag, m[1]) + m[2];
+      i += m[0].length;
+      continue;
+    }
+    if (ch === '<' && /[a-zA-Z]/.test(s[i + 1] || '')) {
+      const lx = lexOpenTag(s, i);
+      out += '<' + paint(COLORS.tag, s.slice(lx.nameStart, lx.nameEnd));
+      let j = lx.nameEnd;
+      for (const a of lx.attrs) {
+        out += s.slice(j, a.start) + paint(COLORS.attr, s.slice(a.start, a.nameEnd));
+        if (a.vStart >= 0) {
+          const quote = s[a.vStart - 1];
+          const valFrom = quote === '"' || quote === "'" ? a.vStart - 1 : a.vStart;
+          out += s.slice(a.nameEnd, valFrom) + paint(COLORS.value, s.slice(valFrom, a.end));
+        }
+        j = a.end;
+      }
+      out += s.slice(j, lx.end);
+      i = lx.end;
+      continue;
+    }
+    out += ch;
+    i++;
+  }
+  return out;
+}
+
 // Re-indent a matched node's HTML from scratch (so minified input still comes
 // out readable). dom-serializer turns the parsed node back into a string;
-// js-beautify does the formatting. When `origins` (descendant nodes to
-// highlight) is given and coloring is on, those nodes are wrapped in the match
-// color within the printed block.
+// js-beautify does the formatting. With color on the block is syntax-
+// highlighted; when `origins` (descendant nodes to highlight) is also given,
+// those nodes are wrapped in the match color instead — match red wins over
+// syntax inside its region.
 function prettyPrint(el, origins, opts) {
   loadPrettyPrinter();
-  const highlight = origins && origins.length && opts && opts.colorOn;
+  const colorOn = Boolean(opts && opts.colorOn);
+  const highlight = origins && origins.length && colorOn;
   const inserted = [];
   if (highlight) {
     // Bracket each origin with sentinel comment nodes among its siblings.
@@ -504,13 +560,23 @@ function prettyPrint(el, origins, opts) {
       k = kids.indexOf(end); if (k >= 0) kids.splice(k, 1);
     }
   }
-  if (!highlight) return html;
+  if (!colorOn) return html;
+  if (!highlight) return highlightHtml(html);
+  // Split on the sentinel comments: regions outside the match get syntax
+  // highlighting, the match region itself gets the match color, unbroken —
+  // syntax codes inside would end the red at every token.
   const startCode = `\x1b[${COLORS.match}m`;
   const resetCode = '\x1b[0m';
-  html = html
-    .replace(new RegExp(`<!--\\s*${HL_START}\\s*-->`, 'g'), startCode)
-    .replace(new RegExp(`<!--\\s*${HL_END}\\s*-->`, 'g'), resetCode);
-  return foldStandaloneCodes(html, startCode, resetCode);
+  const isStart = new RegExp(`^<!--\\s*${HL_START}\\s*-->$`);
+  const isEnd = new RegExp(`^<!--\\s*${HL_END}\\s*-->$`);
+  let out = '';
+  let inside = false;
+  for (const part of html.split(new RegExp(`(<!--\\s*[${HL_START}${HL_END}]\\s*-->)`, 'g'))) {
+    if (isStart.test(part)) { out += startCode; inside = true; continue; }
+    if (isEnd.test(part)) { out += resetCode; inside = false; continue; }
+    out += inside ? part : highlightHtml(part);
+  }
+  return foldStandaloneCodes(out, startCode, resetCode);
 }
 
 // beautify sometimes parks a marker comment on its own line (e.g. when the

@@ -6,8 +6,8 @@ grep-family flags plus HTML-specific capabilities plain grep can't offer.
 **Process:** implement in phase order. **Each feature is its own commit** (code +
 tests + docs, suite green) — see `CLAUDE.md`. Phases are independently shippable.
 
-**Status: Phases 0–12 are done (7 resolved as "no flag" — see below); Phase
-13 (highlighted `-p`) is planned.** Phases 0–4 shipped:
+**Status: all phases (0–13) are done (7 resolved as "no flag" — see below).**
+Phases 0–4 shipped:
 `-m`, `-l`/`-L`/`-q`, `--attr`/`--text`, `--json`, `-0`/`--null`, `--parent`,
 and `-A`/`-B`/`-C`. This file is kept as the design record; future work can
 extend it.
@@ -521,17 +521,27 @@ Scope notes:
   (a backtick inside a regex could mislead the scan); a mislead degrades to
   "fragment not found", never to wrong positions of what is found.
 
-## Phase 13 — Syntax-highlighted `-p`
+## Phase 13 — Syntax-highlighted `-p` — implemented 2026-07-12
 
 When color is on, `-p` output gets ANSI syntax highlighting — tag names,
 attribute names, attribute values, comments — via a small dependency-free
 highlighter over the beautified HTML (the project already lexes HTML twice;
-this needs no tree-sitter). Must compose with the existing `--parent -p`
+this needs no tree-sitter). Composes with the existing `--parent -p`
 matched-node highlight (match color wins inside the highlighted block).
 
-**Design questions:**
-- Color scheme: fixed grep-adjacent palette, or reuse/extend `COLORS`?
-- Highlight `--json`/line-mode `html` fields too? (Lean: no — `-p` only.)
+**Decisions (2026-07-12):**
+- **Extend `COLORS`**: tag `1;34` (bold blue), attribute names `36` (cyan),
+  values `32` (green, quotes included), comments/doctypes `90` (bright
+  black). Text content and punctuation stay unpainted.
+- **`-p` only** — line mode and `--json`'s `html` field stay machine-plain.
+- Composition: the block splits on the `--parent -p` sentinel comments;
+  regions outside the match are syntax-highlighted, the match region is
+  wrapped in unbroken match red (syntax codes inside would end the red at
+  every token). Spans come from the rewrite mode's opening-tag lexer, so a
+  quoted `>` never confuses the scan.
+- Behavior change from v1.6: plain `-p` with color on was previously
+  uncolored; it is now highlighted (`--color=never` restores the old
+  output).
 
 ## Files touched (most phases)
 

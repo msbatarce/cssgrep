@@ -523,6 +523,7 @@ module.exports = {
   parse,
   // Internal helpers, shared with cli.js; not part of the stable API.
   extractHtmlFragments,
+  lexOpenTag,
   lineIndex,
   offsetToPosition,
   lineTextAt,

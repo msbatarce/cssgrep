@@ -87,7 +87,7 @@ own `line:col` locator (that per-match precision is the point of the tool). A
 | `--ignore-file <path>` | Load ignore globs from a file, one per line (`#` comments and blank lines ignored) — like a `.gitignore`. |
 | `-S`, `--follow` | Follow symbolic links while recursing with `-r` (they are skipped by default). Each physical directory is visited once, so symlink cycles are safe. |
 | `-n`, `--line-number` | Prefix each match with its `line:col` locator. Mutually exclusive with `-c` and `-p`. |
-| `-p`, `--print` | Pretty-print the matched node's HTML, re-indented from scratch (works on minified input). No `line:col` locator is shown. |
+| `-p`, `--print` | Pretty-print the matched node's HTML, re-indented from scratch (works on minified input) and syntax-highlighted when color is on. No `line:col` locator is shown. |
 | `--attr <name>` | Print the value of attribute `<name>` for each match (nodes without it are skipped; if every match is skipped the exit status is 1). The name is matched case-insensitively. Honors `-n` and `-w`. |
 | `--text` | Print the matched node's text content, whitespace collapsed. Honors `-n` and `-w`. |
 | `--json` | Print one JSON object per match (NDJSON), with `file`, `line`, `col`, `attribs` (the element's attributes, names lowercased), `html`, `text` — plus `label` when `-e` is used. |
@@ -132,9 +132,11 @@ useful. Suppress the note with `-s` (or `-q`).
 
 When coloring is on, the matched node is highlighted within its line (grep's
 bold-red); the `file:` prefix and `line:col` locator get their own colors
-(magenta and green, like grep). Plain `-p` prints no color (the whole block is
-the match), but `-p --parent <n>` highlights the original matched node inside
-the printed container, so you can see what matched within its surroundings.
+(magenta and green, like grep). `-p` blocks are syntax-highlighted — tag
+names, attribute names, attribute values and comments each get a color — and
+with `--parent <n>` the original matched node is additionally wrapped in the
+match color inside the printed container (match red wins over syntax within
+its region), so you can see what matched within its surroundings.
 
 Exit status: `0` if any match was found, `1` if none, `2` on error — same
 convention as `grep`.

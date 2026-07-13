@@ -450,10 +450,12 @@ check('--parent clamps at the document root', () => {
 check('--parent -p highlights the matched node inside the container', () => {
   const html = '<section><article><h2>T</h2><p class="x">body</p></article></section>';
   const { stdout } = run(['.x', '-p', '--parent', '1', '--color=always'], { input: html });
-  assert.ok(stdout.includes('<article>'), stdout);                    // container printed
   assert.ok(stdout.includes('\x1b[1;31m'), 'match color present');
   assert.ok(stdout.includes('<p class="x">body</p>\x1b[0m'), stdout); // node wrapped + reset
-  assert.ok(/<h2>T<\/h2>/.test(stdout), 'sibling preserved');         // layout intact
+  // The match region stays raw (match red wins; no syntax codes inside)...
+  assert.ok(!/<p[^>]*\x1b\[1;34m/.test(stdout), 'no syntax color inside the match');
+  // ...while the container around it is syntax-highlighted.
+  assert.ok(stdout.includes(`\x1b[1;34marticle\x1b[0m`), 'container tag painted');
   assert.ok(!stdout.includes('<!--'), 'sentinels stripped');
 });
 
@@ -598,9 +600,23 @@ check('--color=always -w: width preserved, ellipsis left uncolored', () => {
   assert.ok(first.includes('\x1b[0m…') || first.endsWith('…'), JSON.stringify(first));
 });
 
-check('--color=always -p: pretty-print stays uncolored', () => {
+check('--color=always -p: block is syntax-highlighted', () => {
   const { stdout } = run(['p#x', '-p', '--color=always'], { input: multiline });
+  assert.ok(stdout.includes('\x1b[1;34mp\x1b[0m'), 'tag name painted');
+  assert.ok(stdout.includes('\x1b[36mid\x1b[0m'), 'attribute name painted');
+  assert.ok(stdout.includes('\x1b[32m"x"\x1b[0m'), 'quoted value painted');
+});
+
+check('-p without color stays plain (pipe default)', () => {
+  const { stdout } = run(['p#x', '-p'], { input: multiline });
   assert.ok(!stdout.includes(ESC), stdout);
+});
+
+check('-p --color=always paints comments and leaves text unpainted', () => {
+  const { stdout } = run(['div', '-p', '--color=always'],
+    { input: '<div><!-- note -->plain</div>' });
+  assert.ok(stdout.includes('\x1b[90m<!-- note -->\x1b[0m'), 'comment painted');
+  assert.ok(/\x1b\[0mplain</.test(stdout.replace(/\n\s*/g, '')), 'text content unpainted');
 });
 
 check('invalid --color value: exit status 2', () => {
