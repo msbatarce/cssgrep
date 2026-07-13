@@ -6,8 +6,8 @@ grep-family flags plus HTML-specific capabilities plain grep can't offer.
 **Process:** implement in phase order. **Each feature is its own commit** (code +
 tests + docs, suite green) — see `CLAUDE.md`. Phases are independently shippable.
 
-**Status: all phases (0–11) are done (7 resolved as "no flag" — see below).**
-Phases 0–4 shipped:
+**Status: Phases 0–11 are done (7 resolved as "no flag" — see below); Phases
+12–13 are planned (v1.6+), with design decisions open.** Phases 0–4 shipped:
 `-m`, `-l`/`-L`/`-q`, `--attr`/`--text`, `--json`, `-0`/`--null`, `--parent`,
 and `-A`/`-B`/`-C`. This file is kept as the design record; future work can
 extend it.
@@ -468,6 +468,65 @@ startup-latency item can be pulled forward at will.
 
 ---
 
+## Phase 12 — Embedded HTML in host files
+
+The novel capability round: find HTML that lives *inside* another language's
+source — above all JS/TS template literals (lit-html, vanilla `` `<div>…` ``
+strings) — and report matches with **host-file locators** (`card.js:41:23`)
+that vim's quickfix can jump to. This is the tool's identity (source-position
+tracking where other tools give up) extended to where modern HTML actually
+lives.
+
+**Mechanism (no tree-sitter, no new dependency)** — same school as Phase 9's
+opening-tag lexer:
+
+- A small dependency-free **template-literal lexer** for JS/TS: tracks
+  backticks, nesting, `${…}` interpolations, string/comment contexts so a
+  backtick inside `'…'` or `//…` never opens a literal.
+- **Byte-preserving hole-punching:** each `${expr}` span inside a qualifying
+  literal is replaced by exactly-same-length whitespace (newlines kept), so
+  every offset in the fragment equals its offset in the host file — no
+  remapping math, and the host file's line index serves directly.
+- **Per-fragment parsing:** each literal is parsed as its own document, so an
+  unclosed tag in one literal can never swallow the next one (no cross-
+  fragment descendant false-positives). Records carry a fragment base offset;
+  emission adds it and renders line text from the *original* host source, so
+  interpolations stay visible in output (`<div class="${cls} card">`).
+- A node may span a hole (`class="${cls} card"` still matches `.card` — the
+  hole masks to whitespace inside the attribute). A tag *name* that is a hole
+  (`<${Tag}>`) masks to garbage and simply never matches.
+
+Scope notes:
+
+- **JSX is explicitly out**: it is not HTML (`className`, expression
+  children); pretending otherwise produces wrong selectors.
+- Search modes only in v1: the rewrite mode keeps treating these files as
+  plain HTML (document that); `--watch` composes for free.
+- "HTML with interruptions" template languages (PHP/ERB/Handlebars…) mostly
+  work *today* via forgiving parsing + `--ext php,erb` — add documented
+  recipes and pinning tests rather than machinery.
+
+**Design questions:**
+- Activation: automatic by file extension (`.js`, `.mjs`, `.cjs`, `.ts`,
+  `.mts`, `.tsx`…) so `cssgrep '.card' app.js` just works (with `-r` still
+  requiring `--ext js,…` to reach those files), or an explicit `--embedded`
+  flag?
+- Which literals qualify: any template literal whose masked content sniffs as
+  markup (`<letter`), only tagged `` html`…` `` literals, or also ordinary
+  `'…'`/`"…"` strings (escape sequences make those messier)?
+
+## Phase 13 — Syntax-highlighted `-p`
+
+When color is on, `-p` output gets ANSI syntax highlighting — tag names,
+attribute names, attribute values, comments — via a small dependency-free
+highlighter over the beautified HTML (the project already lexes HTML twice;
+this needs no tree-sitter). Must compose with the existing `--parent -p`
+matched-node highlight (match color wins inside the highlighted block).
+
+**Design questions:**
+- Color scheme: fixed grep-adjacent palette, or reuse/extend `COLORS`?
+- Highlight `--json`/line-mode `html` fields too? (Lean: no — `-p` only.)
+
 ## Files touched (most phases)
 
 - `index.js`: `parseArgs` (flags + validation matrix), `searchSource` (mode
@@ -494,6 +553,13 @@ Considered during the v1.1 round and intentionally left out for now:
   Commit message prefixes (`feat:`/`fix:`) as the repo convention first.
 - **`-a`/`--text` binary override** — force-parse a file the binary heuristic
   skipped. Add if a real need appears.
+- **tree-sitter as an embedded-HTML backend** — considered for Phase 12 and
+  deliberately not chosen: native bindings break the zero-build rule and the
+  Bun/SEA standalone binaries; WASM grammars mean per-language assets to
+  embed; one grammar package per host language contradicts dependency-light.
+  Recorded as the possible future backend *if* host-language coverage ever
+  needs to grow beyond the local lexer (Python strings, Rust macros…), and
+  then only as an optional dependency the binaries can omit.
 
 ## Verification
 
